@@ -14,7 +14,12 @@ from .newsapi_ai import NewsAPIAIProvider
 from .currents_api import CurrentsAPIProvider
 from .mediastack import MediaStackProvider
 from .gnews import GNewsProvider
-from .yahoo_finance import YahooFinanceProvider
+try:
+    from .yahoo_finance import YahooFinanceProvider
+    YAHOO_AVAILABLE = True
+except ImportError:
+    YahooFinanceProvider = None
+    YAHOO_AVAILABLE = False
 
 __all__ = [
     'AlphaVantageProvider',
@@ -31,5 +36,8 @@ __all__ = [
     'CurrentsAPIProvider',
     'MediaStackProvider',
     'GNewsProvider',
-    'YahooFinanceProvider'
 ]
+
+# Only add YahooFinanceProvider to __all__ if it's available
+if YAHOO_AVAILABLE and YahooFinanceProvider is not None:
+    __all__.append('YahooFinanceProvider')

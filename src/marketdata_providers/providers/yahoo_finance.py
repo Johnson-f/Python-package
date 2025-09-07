@@ -1,6 +1,12 @@
 """Yahoo Finance API Provider Implementation"""
 
-import yfinance as yf
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+    yf = None
+
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, date, timedelta
 from decimal import Decimal

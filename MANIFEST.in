@@ -1,0 +1,36 @@
+# Include the README and license files
+include README.md
+include LICENSE
+include requirements.txt
+include pyproject.toml
+
+# Include all source code files
+recursive-include src *.py
+
+# Include any data or configuration files
+include .env.example
+
+# Exclude development and build artifacts
+exclude .gitignore
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.so
+recursive-exclude * .DS_Store
+exclude .coverage
+exclude .pytest_cache
+exclude htmlcov
+exclude dist
+exclude build
+exclude *.egg-info
+exclude .tox
+exclude .mypy_cache
+exclude .ruff_cache
+
+# Exclude test files from distribution
+exclude test
+recursive-exclude test *
+
+# Exclude development configuration
+exclude .pre-commit-config.yaml
+exclude .github
+recursive-exclude .github *
