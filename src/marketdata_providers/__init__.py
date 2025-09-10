@@ -9,7 +9,7 @@ from .providers import (
     FMPProvider,
     TiingoProvider
 )
-from .brain import MarketDataBrain
+from .brain import MarketDataBrain, AggregatedResult, ProviderResult
 from .config import MarketDataConfig
 
 __all__ = [
@@ -22,5 +22,7 @@ __all__ = [
     'FMPProvider',
     'TiingoProvider',
     'MarketDataBrain',
+    'AggregatedResult',
+    'ProviderResult',
     'MarketDataConfig'
 ]

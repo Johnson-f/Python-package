@@ -7,7 +7,7 @@ from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import logging
 
-from ..base import MarketDataProvider, StockQuote, HistoricalPrice, CompanyInfo, EconomicEvent
+from ..base import MarketDataProvider, StockQuote, HistoricalPrice, CompanyInfo, EconomicEvent, OptionQuote
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -183,7 +183,9 @@ class FMPProvider(MarketDataProvider):
                     price=self._safe_decimal(quote.get('price')),
                     change=self._safe_decimal(quote.get('change', 0)),
                     change_percent=self._safe_decimal(quote.get('changesPercentage', 0)),
-                    timestamp=datetime.now(timezone.utc)
+                    volume=self._safe_int(quote.get('volume', 0)),
+                    timestamp=datetime.now(timezone.utc),
+                    provider=self.name
                 )
             
             # Handle detailed quote format
@@ -191,9 +193,9 @@ class FMPProvider(MarketDataProvider):
             return StockQuote(
                 symbol=quote.get('symbol', symbol.upper()),
                 price=self._safe_decimal(quote.get('price')),
-                open_price=self._safe_decimal(quote.get('open')),
-                high_price=self._safe_decimal(quote.get('dayHigh')),
-                low_price=self._safe_decimal(quote.get('dayLow')),
+                open=self._safe_decimal(quote.get('open')),
+                high=self._safe_decimal(quote.get('dayHigh')),
+                low=self._safe_decimal(quote.get('dayLow')),
                 previous_close=self._safe_decimal(quote.get('previousClose')),
                 change=self._safe_decimal(quote.get('change', 0)),
                 change_percent=self._safe_decimal(quote.get('changesPercentage', 0)),
@@ -251,12 +253,11 @@ class FMPProvider(MarketDataProvider):
             
             # Build API request URL based on interval
             if interval == "1day":
-                # Daily data endpoint
+                # Daily data endpoint (preserve OHLC by not forcing serietype=line)
                 endpoint = f"historical-price-full/{symbol.upper()}"
                 params = {
                     'from': start_date.strftime('%Y-%m-%d'),
-                    'to': end_date.strftime('%Y-%m-%d'),
-                    'serietype': 'line'  # Use 'line' for adjusted close prices
+                    'to': end_date.strftime('%Y-%m-%d')
                 }
             else:
                 # Intraday data endpoint
@@ -285,10 +286,13 @@ class FMPProvider(MarketDataProvider):
                     if not date_str:
                         continue
                         
-                    # Handle different date formats
+                    # Handle different date formats returned by FMP
                     try:
                         if 'T' in date_str:
                             price_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                        elif ' ' in date_str:
+                            # Intraday format: 'YYYY-MM-DD HH:MM:SS'
+                            price_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
                         else:
                             price_date = datetime.strptime(date_str, '%Y-%m-%d')
                             
@@ -306,6 +310,7 @@ class FMPProvider(MarketDataProvider):
                             adjusted_close=self._safe_decimal(item.get('adjClose')),
                             volume=self._safe_int(item.get('volume', 0)),
                             symbol=symbol.upper(),
+                            provider=self.name,
                             source="FMP"
                         ))
                     except (ValueError, KeyError) as e:
@@ -381,8 +386,8 @@ class FMPProvider(MarketDataProvider):
                 pe_ratio=self._safe_decimal(profile.get('pe')),
                 pb_ratio=self._safe_decimal(metrics.get('pbRatioTTM')),
                 beta=self._safe_decimal(profile.get('beta')),
-                dividend_yield=self._safe_decimal(profile.get('lastDiv')),
-                dividend_per_share=self._safe_decimal(metrics.get('dividendYieldTTM')),
+                dividend_yield=self._safe_decimal(metrics.get('dividendYieldTTM')),
+                dividend_per_share=self._safe_decimal(profile.get('lastDiv')),
                 payout_ratio=self._safe_decimal(metrics.get('payoutRatioTTM')),
                 revenue_per_share_ttm=self._safe_decimal(metrics.get('revenuePerShareTTM')),
                 revenue=self._safe_decimal(metrics.get('revenueTTM')),
@@ -533,7 +538,7 @@ class FMPProvider(MarketDataProvider):
         self, 
         symbol: str, 
         expiration: Optional[date] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[OptionQuote]:
         """
         Get options chain data for a symbol.
         Note: FMP free tier has limited options data access.
@@ -543,7 +548,7 @@ class FMPProvider(MarketDataProvider):
             expiration: Optional expiration date filter
             
         Returns:
-            List of options contracts
+            List of OptionQuote contracts
         """
         if not symbol or not isinstance(symbol, str):
             self._log_error("Invalid Input", f"Invalid symbol: {symbol}")
@@ -563,31 +568,41 @@ class FMPProvider(MarketDataProvider):
                 logger.warning(f"No options data available for {symbol} (may require FMP premium)")
                 return []
             
-            # Process options data
-            options = []
-            for option in data:
-                if not isinstance(option, dict):
+            # Process options data into OptionQuote objects
+            options: List[OptionQuote] = []
+            for raw in data:
+                if not isinstance(raw, dict):
                     continue
-                    
                 try:
-                    options.append({
-                        'symbol': option.get('symbol', ''),
-                        'strike': self._safe_decimal(option.get('strike')),
-                        'expiration': option.get('expiration'),
-                        'option_type': option.get('type', '').lower(),
-                        'bid': self._safe_decimal(option.get('bid')),
-                        'ask': self._safe_decimal(option.get('ask')),
-                        'last_price': self._safe_decimal(option.get('lastPrice')),
-                        'volume': self._safe_int(option.get('volume')),
-                        'open_interest': self._safe_int(option.get('openInterest')),
-                        'implied_volatility': self._safe_decimal(option.get('impliedVolatility')),
-                        'delta': self._safe_decimal(option.get('delta')),
-                        'gamma': self._safe_decimal(option.get('gamma')),
-                        'theta': self._safe_decimal(option.get('theta')),
-                        'vega': self._safe_decimal(option.get('vega')),
-                        'rho': self._safe_decimal(option.get('rho')),
-                        'provider': self.name
-                    })
+                    exp_dt: Optional[date] = None
+                    exp_str = raw.get('expiration') or raw.get('expirationDate')
+                    if exp_str:
+                        try:
+                            exp_dt = datetime.strptime(exp_str, '%Y-%m-%d').date()
+                        except Exception:
+                            exp_dt = None
+                    options.append(OptionQuote(
+                        symbol=raw.get('symbol', ''),
+                        underlying_symbol=symbol.upper(),
+                        strike=self._safe_decimal(raw.get('strike')),
+                        strike_price=self._safe_decimal(raw.get('strike')),
+                        expiration=exp_dt,
+                        expiration_date=exp_dt,
+                        option_type=(raw.get('type') or raw.get('contractType') or '').lower(),
+                        bid=self._safe_decimal(raw.get('bid')),
+                        ask=self._safe_decimal(raw.get('ask')),
+                        last_price=self._safe_decimal(raw.get('lastPrice')),
+                        volume=self._safe_int(raw.get('volume')),
+                        open_interest=self._safe_int(raw.get('openInterest')),
+                        implied_volatility=self._safe_decimal(raw.get('impliedVolatility')),
+                        delta=self._safe_decimal(raw.get('delta')),
+                        gamma=self._safe_decimal(raw.get('gamma')),
+                        theta=self._safe_decimal(raw.get('theta')),
+                        vega=self._safe_decimal(raw.get('vega')),
+                        rho=self._safe_decimal(raw.get('rho')),
+                        timestamp=datetime.now(timezone.utc),
+                        provider=self.name
+                    ))
                 except Exception as e:
                     self._log_error("Option Processing", f"Error processing option: {e}")
                     continue

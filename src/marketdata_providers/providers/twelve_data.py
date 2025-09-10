@@ -276,12 +276,11 @@ class TwelveDataProvider(MarketDataProvider):
         symbol = symbol.upper().strip()
         
         try:
-            # Use TwelveData's quote endpoint
-            data = await self._make_request("quote", {
-                'symbol': symbol,
-                'interval': '1day',
-                'outputsize': 1
-            })
+            # Use TwelveData's quote endpoint (symbol only; interval/outputsize not used here)
+            params = {
+                'symbol': symbol
+            }
+            data = await self._make_request("quote", params)
             
             if not data or not isinstance(data, dict):
                 self._log_error("No Data", f"No data returned for symbol {symbol}")
@@ -292,11 +291,16 @@ class TwelveDataProvider(MarketDataProvider):
                 self._log_error("API Error", data.get('message', 'Unknown error'))
                 return None
                 
-            # Parse timestamp
+            # Parse timestamp (datetime or timestamp)
             timestamp = datetime.now(timezone.utc)
-            if 'datetime' in data:
+            dt_raw = data.get('datetime') or data.get('timestamp')
+            if dt_raw:
                 try:
-                    timestamp = datetime.fromisoformat(data['datetime'].replace('Z', '+00:00'))
+                    if isinstance(dt_raw, (int, float)):
+                        # seconds
+                        timestamp = datetime.fromtimestamp(float(dt_raw), tz=timezone.utc)
+                    else:
+                        timestamp = datetime.fromisoformat(str(dt_raw).replace('Z', '+00:00'))
                 except (ValueError, TypeError):
                     pass
                         
@@ -304,12 +308,12 @@ class TwelveDataProvider(MarketDataProvider):
                 symbol=symbol,
                 price=self._safe_decimal(data.get('close')),
                 change=self._safe_decimal(data.get('change')),
-                change_percent=self._safe_decimal(data.get('percent_change')),
-                volume=self._safe_int(data.get('volume')),
+                change_percent=self._safe_decimal(data.get('percent_change') or data.get('percent_change_1d')),
+                volume=self._safe_int(data.get('volume') or data.get('average_volume') or data.get('share_volume')),
                 open=self._safe_decimal(data.get('open')),
                 high=self._safe_decimal(data.get('high')),
                 low=self._safe_decimal(data.get('low')),
-                previous_close=self._safe_decimal(data.get('previous_close')),
+                previous_close=self._safe_decimal(data.get('previous_close') or data.get('prev_close')),
                 market_cap=None,  # Not available in quote endpoint
                 pe_ratio=None,    # Not available in quote endpoint
                 timestamp=timestamp,
@@ -369,7 +373,8 @@ class TwelveDataProvider(MarketDataProvider):
                 'start_date': start_date.strftime('%Y-%m-%d'),
                 'end_date': end_date.strftime('%Y-%m-%d'),
                 'outputsize': min(5000, limit),
-                'order': 'asc'  # Get oldest to newest
+                'order': 'asc',  # Get oldest to newest
+                'timezone': 'UTC'
             }
             
             # Make the request to time_series endpoint
@@ -739,6 +744,7 @@ class TwelveDataProvider(MarketDataProvider):
                 'interval': interval_str,
                 'time_period': time_period,
                 'series_type': series_type,
+                'timezone': 'UTC',
                 **kwargs
             }
             

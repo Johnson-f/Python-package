@@ -3,7 +3,19 @@ Polygon.io API Provider Implementation (Updated 2025)
 
 This module provides an asynchronous interface to the Polygon.io stock market data API.
 It includes comprehensive error handling, rate limiting, and data normalization.
-All endpoints have been verified against the current Polygon.io API documentation.
+All endpoints have been verified against the current Polygon.io API documentation and
+updated to include the latest available endpoints.
+
+Supported endpoints include:
+- Real-time and historical stock data
+- Options data and contract details
+- Company fundamentals and financials
+- Market news and events
+- Full market snapshots and unified snapshots
+- Technical indicators and market analytics
+- Forex and cryptocurrency data
+- Gainers/losers, market holidays, and conditions
+- Reference data for tickers, exchanges, and conditions
 """
 
 import aiohttp
@@ -167,8 +179,8 @@ class PolygonProvider(MarketDataProvider):
         if params is None:
             params = {}
             
-        # Add API key to params
-        params['apikey'] = self.api_key  # Note: lowercase 'apikey' for Polygon.io
+        # Add API key to params (Polygon expects 'apiKey' query param)
+        params['apiKey'] = self.api_key
         
         # Build URL
         if version:
@@ -256,28 +268,33 @@ class PolygonProvider(MarketDataProvider):
         symbol = symbol.upper().strip()
         
         try:
-            # Use the current v3 snapshot endpoint (most reliable for real-time data)
-            snapshot_endpoint = f"snapshot/ticker/{symbol}"
-            snapshot_data = await self._make_request(snapshot_endpoint, version='v3')
+            # Use the v2 single-ticker snapshot endpoint
+            snapshot_endpoint = f"snapshot/locale/us/markets/stocks/tickers/{symbol}"
+            snapshot_data = await self._make_request(snapshot_endpoint, version='v2')
             
-            if not snapshot_data or 'results' not in snapshot_data:
+            if not snapshot_data or 'ticker' not in snapshot_data:
                 self._log_error("Data Unavailable", f"No snapshot data for {symbol}")
                 return None
                 
-            result = snapshot_data['results']
+            result = snapshot_data['ticker']
             
             # Extract values from the snapshot response
-            last_quote = result.get('last_quote', {})
-            last_trade = result.get('last_trade', {})
-            prev_daily_bar = result.get('prev_daily_bar', {})
+            last_quote = result.get('lastQuote', result.get('last_quote', {}))
+            last_trade = result.get('lastTrade', result.get('last_trade', {}))
+            prev_daily_bar = result.get('prevDay', result.get('prev_daily_bar', {}))
+            day_bar = result.get('day', {})
             
-            # Get current price from last trade or last quote
+            # Get current price from last trade or derive from last quote
             last_price = None
-            if last_trade and 'price' in last_trade:
-                last_price = self._safe_decimal(last_trade['price'])
-            elif last_quote and 'ask' in last_quote and 'bid' in last_quote:
-                ask = self._safe_decimal(last_quote['ask'])
-                bid = self._safe_decimal(last_quote['bid'])
+            if last_trade:
+                if 'p' in last_trade:
+                    last_price = self._safe_decimal(last_trade.get('p'))
+                elif 'price' in last_trade:
+                    last_price = self._safe_decimal(last_trade.get('price'))
+            if last_price is None and last_quote:
+                # Try standard keys from snapshot
+                ask = self._safe_decimal(last_quote.get('ask', last_quote.get('P')))
+                bid = self._safe_decimal(last_quote.get('bid', last_quote.get('p')))
                 if ask > 0 and bid > 0:
                     last_price = (ask + bid) / 2
             
@@ -298,21 +315,31 @@ class PolygonProvider(MarketDataProvider):
                 change_percent = (change / prev_close) * 100
             
             # Get other market data
-            volume = self._safe_int(last_trade.get('sip_timestamp')) if last_trade else 0
-            open_price = self._safe_decimal(prev_daily_bar.get('o')) if prev_daily_bar else None
-            high = self._safe_decimal(prev_daily_bar.get('h')) if prev_daily_bar else None
-            low = self._safe_decimal(prev_daily_bar.get('l')) if prev_daily_bar else None
+            volume = self._safe_int((day_bar or {}).get('v') or (prev_daily_bar or {}).get('v'))
+            open_price = self._safe_decimal((day_bar or {}).get('o'))
+            high = self._safe_decimal((day_bar or {}).get('h'))
+            low = self._safe_decimal((day_bar or {}).get('l'))
             
             # Get timestamp
-            timestamp = datetime.now(timezone.utc)
-            if last_trade and 'sip_timestamp' in last_trade:
+            def _to_dt(ts: Any) -> datetime:
                 try:
-                    timestamp = datetime.fromtimestamp(
-                        last_trade['sip_timestamp'] / 1_000_000_000, 
-                        tz=timezone.utc
-                    )
-                except (ValueError, TypeError):
+                    ts_int = int(ts)
+                    if ts_int > 1_000_000_000_000_000:  # ns
+                        return datetime.fromtimestamp(ts_int / 1_000_000_000, tz=timezone.utc)
+                    if ts_int > 1_000_000_000_000:  # ms
+                        return datetime.fromtimestamp(ts_int / 1000, tz=timezone.utc)
+                    if ts_int > 0:  # s
+                        return datetime.fromtimestamp(ts_int, tz=timezone.utc)
+                except Exception:
                     pass
+                return datetime.now(timezone.utc)
+
+            ts_src = None
+            if isinstance(last_trade, dict):
+                ts_src = last_trade.get('t') or last_trade.get('sip_timestamp')
+            if ts_src is None and isinstance(last_quote, dict):
+                ts_src = last_quote.get('t')
+            timestamp = _to_dt(ts_src or 0)
             
             return StockQuote(
                 symbol=symbol,
@@ -943,28 +970,38 @@ class PolygonProvider(MarketDataProvider):
             }
 
     async def get_forex_quote(self, from_currency: str, to_currency: str) -> Optional[Dict[str, Any]]:
-        """Get real-time forex quote using current v2 forex endpoint"""
+        """Get real-time forex quote using v1 last quote endpoint (currencies)"""
         try:
-            # Format as forex pair (e.g., EUR/USD becomes C:EURUSD)
-            forex_symbol = f"C:{from_currency.upper()}{to_currency.upper()}"
+            from_ccy = from_currency.upper()
+            to_ccy = to_currency.upper()
             
-            # Use v2 forex real-time endpoint
-            data = await self._make_request(f"last/trade/{forex_symbol}", version='v2')
+            # Use v1 forex last quote endpoint
+            data = await self._make_request(f"last_quote/currencies/{from_ccy}/{to_ccy}", version='v1')
             
-            if not data or 'results' not in data:
+            if not data:
                 return None
             
-            result = data['results']
+            result = data.get('last') or data.get('results') or {}
+            bid = self._safe_decimal(result.get('bid') or result.get('bp') or result.get('b'))
+            ask = self._safe_decimal(result.get('ask') or result.get('ap') or result.get('a'))
+            price = (bid + ask) / 2 if bid and ask and bid > 0 and ask > 0 else self._safe_decimal(result.get('price'))
+            
+            # Timestamp handling (seconds or milliseconds)
+            ts = result.get('timestamp') or result.get('t') or 0
+            try:
+                ts_int = int(ts)
+                ts_dt = datetime.fromtimestamp(ts_int / 1000, tz=timezone.utc) if ts_int > 1_000_000_000_000 else datetime.fromtimestamp(ts_int, tz=timezone.utc)
+            except Exception:
+                ts_dt = datetime.now(timezone.utc)
             
             return {
-                'from_currency': from_currency.upper(),
-                'to_currency': to_currency.upper(),
-                'symbol': forex_symbol,
-                'price': self._safe_decimal(result.get('p', result.get('price'))),
-                'timestamp': datetime.fromtimestamp(
-                    result.get('t', result.get('timestamp', 0)) / 1000, 
-                    tz=timezone.utc
-                ),
+                'from_currency': from_ccy,
+                'to_currency': to_ccy,
+                'symbol': f"C:{from_ccy}{to_ccy}",
+                'bid': bid,
+                'ask': ask,
+                'price': price,
+                'timestamp': ts_dt,
                 'provider': self.name
             }
             
@@ -973,31 +1010,43 @@ class PolygonProvider(MarketDataProvider):
             return None
 
     async def get_crypto_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get real-time crypto quote using current v2 crypto endpoint"""
+        """Get real-time crypto last trade using v1 crypto endpoint"""
         try:
-            # Format as crypto pair (e.g., BTC becomes X:BTCUSD)
-            if not symbol.startswith('X:'):
-                crypto_symbol = f"X:{symbol.upper()}USD"
-            else:
-                crypto_symbol = symbol.upper()
+            raw = symbol.upper().replace('X:', '')
+            base, quote = (raw, 'USD') if '/' not in raw else raw.split('/', 1)
+            if raw.endswith('USD') and '/' not in raw:
+                base, quote = raw[:-3], 'USD'
             
-            # Use v2 crypto real-time endpoint
-            data = await self._make_request(f"last/trade/{crypto_symbol}", version='v2')
+            # Use v1 crypto last trade endpoint
+            data = await self._make_request(f"last/crypto/{base}/{quote}", version='v1')
             
-            if not data or 'results' not in data:
+            if not data:
                 return None
             
-            result = data['results']
+            result = data.get('last') or data.get('results') or {}
+            price = self._safe_decimal(result.get('price') or result.get('p'))
+            size = self._safe_decimal(result.get('size') or result.get('s'))
+            exch = result.get('exchange') or result.get('x')
+            
+            ts = result.get('timestamp') or result.get('t') or 0
+            try:
+                ts_int = int(ts)
+                # Crypto timestamps sometimes in nanoseconds
+                if ts_int > 1_000_000_000_000_000:
+                    ts_dt = datetime.fromtimestamp(ts_int / 1_000_000_000, tz=timezone.utc)
+                elif ts_int > 1_000_000_000_000:
+                    ts_dt = datetime.fromtimestamp(ts_int / 1000, tz=timezone.utc)
+                else:
+                    ts_dt = datetime.fromtimestamp(ts_int, tz=timezone.utc)
+            except Exception:
+                ts_dt = datetime.now(timezone.utc)
             
             return {
-                'symbol': crypto_symbol,
-                'price': self._safe_decimal(result.get('p', result.get('price'))),
-                'size': self._safe_decimal(result.get('s', result.get('size'))),
-                'timestamp': datetime.fromtimestamp(
-                    result.get('t', result.get('timestamp', 0)) / 1000000000,  # Crypto uses nanoseconds
-                    tz=timezone.utc
-                ),
-                'exchange': result.get('x'),
+                'symbol': f"X:{base}{quote}",
+                'price': price,
+                'size': size,
+                'timestamp': ts_dt,
+                'exchange': exch,
                 'provider': self.name
             }
             
@@ -1103,7 +1152,7 @@ class PolygonProvider(MarketDataProvider):
             return []
 
     async def get_market_indices(self) -> List[Dict[str, Any]]:
-        """Get major market indices data"""
+        """Get major market indices data via v3 unified snapshot"""
         indices = [
             'I:SPX',   # S&P 500
             'I:DJI',   # Dow Jones
@@ -1111,24 +1160,26 @@ class PolygonProvider(MarketDataProvider):
             'I:RUT',   # Russell 2000
             'I:VIX'    # VIX
         ]
-        
-        results = []
-        
-        for index in indices:
-            try:
-                data = await self._make_request(f"snapshot/ticker/{index}", version='v3')
-                if data and 'results' in data:
-                    results.append({
-                        'symbol': index,
-                        'name': self._get_index_name(index),
-                        'data': data['results'],
-                        'provider': self.name
-                    })
-            except Exception as e:
-                logger.warning(f"Failed to fetch index {index}: {str(e)}")
-                continue
-        
-        return results
+        try:
+            params = { 'tickers': ','.join(indices) }
+            data = await self._make_request("snapshot", params, version='v3')
+            if not data or 'tickers' not in data:
+                return []
+            results: List[Dict[str, Any]] = []
+            for t in data['tickers']:
+                sym = t.get('ticker')
+                if not sym:
+                    continue
+                results.append({
+                    'symbol': sym,
+                    'name': self._get_index_name(sym),
+                    'data': t,
+                    'provider': self.name
+                })
+            return results
+        except Exception as e:
+            logger.warning(f"Failed to fetch market indices snapshot: {str(e)}")
+            return []
     
     def _get_index_name(self, symbol: str) -> str:
         """Get friendly name for market index"""
@@ -1253,6 +1304,229 @@ class PolygonProvider(MarketDataProvider):
         except Exception as e:
             self._log_error("get_exchange_info", f"Failed to fetch exchange info: {str(e)}")
             return []
+
+    async def get_full_market_snapshot(self) -> List[Dict[str, Any]]:
+        """Get a snapshot of the entire US stock market using v2 full market snapshot endpoint"""
+        try:
+            data = await self._make_request("snapshot/locale/us/markets/stocks/tickers", version='v2')
+            
+            if not data or 'tickers' not in data:
+                return []
+            
+            return data['tickers']
+            
+        except Exception as e:
+            self._log_error("get_full_market_snapshot", f"Failed to fetch full market snapshot: {str(e)}")
+            return []
+
+    async def get_unified_snapshot(self, symbols: List[str]) -> Dict[str, Any]:
+        """Get unified snapshots for multiple symbols across asset classes"""
+        try:
+            if not symbols:
+                return {}
+            
+            # Join symbols with commas for the API
+            symbols_str = ','.join(symbols)
+            params = {'tickers': symbols_str}
+            
+            data = await self._make_request("snapshot", params, version='v3')
+            
+            if not data or 'tickers' not in data:
+                return {}
+            
+            # Convert to dict keyed by symbol
+            result = {}
+            for ticker_data in data['tickers']:
+                symbol = ticker_data.get('ticker', '')
+                if symbol:
+                    result[symbol] = ticker_data
+            
+            return result
+            
+        except Exception as e:
+            self._log_error("get_unified_snapshot", f"Failed to fetch unified snapshot: {str(e)}")
+            return {}
+
+    async def get_last_trade(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get the last trade for a specific symbol using v2 last trade endpoint"""
+        if not symbol or not isinstance(symbol, str):
+            self._log_error("Invalid Input", f"Invalid symbol: {symbol}")
+            return None
+        
+        symbol = symbol.upper().strip()
+        
+        try:
+            data = await self._make_request(f"last/trade/{symbol}", version='v2')
+            
+            if not data or 'results' not in data:
+                return None
+            
+            result = data['results']
+            return {
+                'symbol': symbol,
+                'price': self._safe_decimal(result.get('p', result.get('price'))),
+                'size': self._safe_int(result.get('s', result.get('size'))),
+                'timestamp': datetime.fromtimestamp(
+                    result.get('t', result.get('timestamp', 0)) / 1000, 
+                    tz=timezone.utc
+                ),
+                'exchange': result.get('x'),
+                'conditions': result.get('c', result.get('conditions')),
+                'trade_id': result.get('i', result.get('trade_id')),
+                'provider': self.name
+            }
+            
+        except Exception as e:
+            self._log_error("get_last_trade", f"Failed to fetch last trade for {symbol}: {str(e)}")
+            return None
+
+    async def get_last_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get the last NBBO quote for a specific symbol using v2 last NBBO endpoint"""
+        if not symbol or not isinstance(symbol, str):
+            self._log_error("Invalid Input", f"Invalid symbol: {symbol}")
+            return None
+        
+        symbol = symbol.upper().strip()
+        
+        try:
+            data = await self._make_request(f"last/nbbo/{symbol}", version='v2')
+            
+            if not data or 'results' not in data:
+                return None
+            
+            result = data['results']
+            return {
+                'symbol': symbol,
+                'bid_price': self._safe_decimal(result.get('bid_price', result.get('p'))),
+                'bid_size': self._safe_int(result.get('bid_size', result.get('s'))),
+                'ask_price': self._safe_decimal(result.get('ask_price', result.get('P'))),
+                'ask_size': self._safe_int(result.get('ask_size', result.get('S'))),
+                'timestamp': datetime.fromtimestamp(
+                    result.get('t', result.get('timestamp', 0)) / 1000, 
+                    tz=timezone.utc
+                ),
+                'bid_exchange': result.get('bid_exchange', result.get('x')),
+                'ask_exchange': result.get('ask_exchange', result.get('X')),
+                'provider': self.name
+            }
+            
+        except Exception as e:
+            self._log_error("get_last_quote", f"Failed to fetch last quote for {symbol}: {str(e)}")
+            return None
+
+    async def get_daily_open_close(self, symbol: str, date: date) -> Optional[Dict[str, Any]]:
+        """Get the daily open, high, low, close for a specific symbol and date"""
+        if not symbol or not isinstance(symbol, str):
+            self._log_error("Invalid Input", f"Invalid symbol: {symbol}")
+            return None
+        
+        symbol = symbol.upper().strip()
+        
+        try:
+            endpoint = f"open-close/{symbol}/{date.strftime('%Y-%m-%d')}"
+            data = await self._make_request(endpoint, version='v1')
+            
+            if not data:
+                return None
+            
+            return {
+                'symbol': symbol,
+                'date': date,
+                'open': self._safe_decimal(data.get('open')),
+                'high': self._safe_decimal(data.get('high')),
+                'low': self._safe_decimal(data.get('low')),
+                'close': self._safe_decimal(data.get('close')),
+                'volume': self._safe_int(data.get('volume')),
+                'after_hours': self._safe_decimal(data.get('afterHours')),
+                'pre_market': self._safe_decimal(data.get('preMarket')),
+                'provider': self.name
+            }
+            
+        except Exception as e:
+            self._log_error("get_daily_open_close", f"Failed to fetch daily open/close for {symbol}: {str(e)}")
+            return None
+
+    async def get_gainers_losers(self, direction: str = 'gainers', limit: int = 20) -> List[Dict[str, Any]]:
+        """Get top gainers or losers for the day"""
+        try:
+            if direction not in ['gainers', 'losers']:
+                direction = 'gainers'
+            
+            params = {'limit': max(1, min(1000, limit))}
+            data = await self._make_request(f"snapshot/locale/us/markets/stocks/{direction}", params, version='v2')
+            
+            if not data or 'tickers' not in data:
+                return []
+            
+            return data['tickers']
+            
+        except Exception as e:
+            self._log_error("get_gainers_losers", f"Failed to fetch {direction}: {str(e)}")
+            return []
+
+    async def get_conditions(self, asset_class: str = 'stocks', tick_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get reference data for trade/quote conditions (v3/reference/conditions)"""
+        try:
+            params = {'asset_class': asset_class}
+            if tick_type:
+                params['type'] = tick_type
+            
+            data = await self._make_request("reference/conditions", params, version='v3')
+            
+            if not data or 'results' not in data:
+                return []
+            
+            return data['results']
+            
+        except Exception as e:
+            self._log_error("get_conditions", f"Failed to fetch conditions for {asset_class}: {str(e)}")
+            return []
+
+    async def get_ticker_types(self) -> List[Dict[str, Any]]:
+        """Get all available ticker types"""
+        try:
+            data = await self._make_request("reference/tickers/types", version='v3')
+            
+            if not data or 'results' not in data:
+                return []
+            
+            return data['results']
+            
+        except Exception as e:
+            self._log_error("get_ticker_types", f"Failed to fetch ticker types: {str(e)}")
+            return []
+
+    async def get_option_contract_details(self, option_symbol: str) -> Optional[Dict[str, Any]]:
+        """Get details for a specific options contract"""
+        if not option_symbol or not isinstance(option_symbol, str):
+            self._log_error("Invalid Input", f"Invalid option symbol: {option_symbol}")
+            return None
+        
+        option_symbol = option_symbol.upper().strip()
+        
+        try:
+            data = await self._make_request(f"reference/options/contracts/{option_symbol}", version='v3')
+            
+            if not data or 'results' not in data:
+                return None
+            
+            result = data['results']
+            return {
+                'contract_symbol': result.get('ticker'),
+                'underlying_symbol': result.get('underlying_ticker'),
+                'expiration_date': result.get('expiration_date'),
+                'strike_price': self._safe_decimal(result.get('strike_price')),
+                'contract_type': result.get('contract_type'),
+                'exercise_style': result.get('exercise_style'),
+                'shares_per_contract': self._safe_int(result.get('shares_per_contract')),
+                'primary_exchange': result.get('primary_exchange'),
+                'cfi': result.get('cfi'),
+                'provider': self.name
+            }
+            
+        except Exception as e:
+            self._log_error("get_option_contract_details", f"Failed to fetch option contract details for {option_symbol}: {str(e)}")
+            return None
 
     async def get_market_conditions(self) -> Dict[str, Any]:
         """Get current market conditions summary"""

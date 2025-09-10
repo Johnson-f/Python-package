@@ -3,6 +3,7 @@ Finnhub API Provider Implementation
 
 This module provides an optimized implementation of the MarketDataProvider interface
 for the Finnhub API with enhanced error handling, rate limiting, and data validation.
+Fixed endpoints and added missing functionality based on official Finnhub documentation.
 """
 
 import aiohttp
@@ -41,18 +42,20 @@ class FinnhubProvider(MarketDataProvider):
     Finnhub API implementation with enhanced features and error handling.
     
     Rate Limits (Free Tier):
-    - 30 API calls per second
+    - 60 API calls per minute 
     - 1,000,000 API calls per month
     """
     
     def __init__(self, api_key: str):
         super().__init__(api_key, "Finnhub")
         self.base_url = "https://finnhub.io/api/v1"
-        self.rate_limit_per_second = 30  # Finnhub free tier limit
+        self.rate_limit_per_minute = 60  # Finnhub free tier limit - corrected from 30 per second
         self.rate_limit_per_month = 1000000
         self._last_request_time = 0
         self._request_count = 0
-        self._rate_limit_semaphore = asyncio.Semaphore(self.rate_limit_per_second)
+        self._minute_requests = 0
+        self._minute_start = 0
+        self._rate_limit_semaphore = asyncio.Semaphore(self.rate_limit_per_minute)
     
     def _safe_decimal(self, value: Any, default: Decimal = Decimal('0')) -> Decimal:
         """Safely convert value to Decimal"""
@@ -98,18 +101,24 @@ class FinnhubProvider(MarketDataProvider):
         # Add API key to params
         params['token'] = self.api_key
         
-        # Rate limiting
+        # Rate limiting - corrected to per minute instead of per second
         current_time = asyncio.get_event_loop().time()
-        time_since_last = current_time - self._last_request_time
+        current_minute = int(current_time // 60)
         
-        # Ensure we don't exceed rate limits
-        if time_since_last < (1 / self.rate_limit_per_second):
-            await asyncio.sleep((1 / self.rate_limit_per_second) - time_since_last)
+        if current_minute != self._minute_start:
+            self._minute_start = current_minute
+            self._minute_requests = 0
+        
+        if self._minute_requests >= self.rate_limit_per_minute:
+            sleep_time = 60 - (current_time % 60)
+            await asyncio.sleep(sleep_time)
+            self._minute_requests = 0
         
         async with self._rate_limit_semaphore:
             try:
                 self._request_count += 1
-                self._last_request_time = asyncio.get_event_loop().time()
+                self._minute_requests += 1
+                self._last_request_time = current_time
                 
                 url = f"{self.base_url}/{endpoint.lstrip('/')}"
                 
@@ -129,7 +138,7 @@ class FinnhubProvider(MarketDataProvider):
                                 )
                                 return None
                         elif response.status == 429:
-                            retry_after = int(response.headers.get('X-RateLimit-Reset', 60))
+                            retry_after = int(response.headers.get('Retry-After', 60))
                             logger.warning(f"Rate limited. Retry after {retry_after} seconds")
                             # Don't wait - let the Brain try another provider
                             raise Exception(f"Rate limit exceeded. Retry after {retry_after} seconds")
@@ -168,13 +177,11 @@ class FinnhubProvider(MarketDataProvider):
             return None
             
         try:
-            # Use the quote endpoint (removed invalid quote/last fallback)
             data = await self._make_request("quote", {'symbol': symbol.upper()})
             
             if not data or 'c' not in data:  # 'c' is current price
                 return None
             
-            # Parse the full quote
             return StockQuote(
                 symbol=symbol.upper(),
                 price=self._safe_decimal(data.get('c')),  # Current price
@@ -202,7 +209,7 @@ class FinnhubProvider(MarketDataProvider):
         interval: str = "1d"
     ) -> List[HistoricalPrice]:
         """
-        Get historical prices for a symbol
+        Get historical prices for a symbol using stock/candle endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -222,7 +229,7 @@ class FinnhubProvider(MarketDataProvider):
             end_date = end_date or date.today()
             start_date = start_date or (end_date - timedelta(days=365))
             
-            # Convert dates to timestamps with timezone
+            # Convert dates to timestamps
             start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
             end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
             start_timestamp = int(start_dt.timestamp())
@@ -252,6 +259,7 @@ class FinnhubProvider(MarketDataProvider):
                 'to': end_timestamp
             }
             
+            # Use correct endpoint: stock/candle
             data = await self._make_request("stock/candle", params)
             if not data or data.get('s') != 'ok' or 't' not in data:
                 return []
@@ -299,7 +307,7 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_company_info(self, symbol: str) -> Optional[CompanyInfo]:
         """
-        Get comprehensive company information
+        Get comprehensive company information using stock/profile2 endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -312,7 +320,7 @@ class FinnhubProvider(MarketDataProvider):
             return None
             
         try:
-            # Fetch company profile
+            # Fetch company profile using correct endpoint
             profile_data = await self._make_request("stock/profile2", {'symbol': symbol.upper()})
             
             # Fetch company metrics for additional data
@@ -327,7 +335,6 @@ class FinnhubProvider(MarketDataProvider):
             # Extract metrics if available
             metrics = metrics_data.get('metric', {}) if metrics_data else {}
             
-            # Build company info with enhanced field mappings
             return CompanyInfo(
                 symbol=symbol.upper(),
                 name=profile_data.get('name', ''),
@@ -355,7 +362,6 @@ class FinnhubProvider(MarketDataProvider):
             
         except Exception as e:
             self._log_error("get_company_info", f"Failed to fetch company info for {symbol}: {str(e)}")
-            self._log_error("get_company_info", e)
             return None
     
     async def get_options_chain(
@@ -364,7 +370,7 @@ class FinnhubProvider(MarketDataProvider):
         expiration: Optional[date] = None
     ) -> Optional[List[OptionQuote]]:
         """Get options chain - Finnhub requires premium for options data"""
-        self._log_info(f"Options chain requires premium subscription on Finnhub")
+        self._log_info("Options chain requires premium subscription on Finnhub")
         return None
     
     async def get_news(
@@ -375,7 +381,7 @@ class FinnhubProvider(MarketDataProvider):
         category: str = 'general'
     ) -> List[Dict[str, Any]]:
         """
-        Get news articles for a specific symbol or general market news
+        Get news articles using correct endpoints
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL'). If None, returns general market news.
@@ -388,11 +394,11 @@ class FinnhubProvider(MarketDataProvider):
         """
         try:
             # Validate inputs
-            limit = max(1, min(1000, limit))  # Clamp between 1-1000
-            days = max(1, min(365, days))  # Clamp between 1-365
+            limit = max(1, min(1000, limit))
+            days = max(1, min(365, days))
             
             if symbol:
-                # Company-specific news
+                # Company-specific news using company-news endpoint
                 today = datetime.now(timezone.utc).date()
                 from_date = (today - timedelta(days=days)).strftime('%Y-%m-%d')
                 to_date = today.strftime('%Y-%m-%d')
@@ -402,16 +408,10 @@ class FinnhubProvider(MarketDataProvider):
                     'from': from_date,
                     'to': to_date
                 }
+                # Correct endpoint for company news
                 data = await self._make_request("company-news", params)
-                
-                # Filter out any None or empty items
-                if data and isinstance(data, list):
-                    data = [item for item in data if item and isinstance(item, dict)]
-                    
-                    # Sort by date (newest first)
-                    data.sort(key=lambda x: x.get('datetime', 0), reverse=True)
             else:
-                # General market news
+                # General market news using news endpoint (not general-news)
                 valid_categories = ['general', 'forex', 'crypto', 'merger']
                 if category not in valid_categories:
                     category = 'general'
@@ -449,7 +449,7 @@ class FinnhubProvider(MarketDataProvider):
 
     async def get_earnings_calendar(self, symbol: str = None, horizon: str = "3month", **kwargs) -> List[Dict[str, Any]]:
         """
-        Get earnings calendar data from Finnhub
+        Get earnings calendar data using calendar/earnings endpoint
         
         Args:
             symbol: Stock symbol (optional, if None returns all earnings)
@@ -468,7 +468,7 @@ class FinnhubProvider(MarketDataProvider):
             elif horizon == "1year":
                 start_date = end_date - timedelta(days=365)
             else:
-                start_date = end_date - timedelta(days=90)  # default to 3 months
+                start_date = end_date - timedelta(days=90)
             
             params = {
                 'from': start_date.strftime('%Y-%m-%d'),
@@ -479,8 +479,8 @@ class FinnhubProvider(MarketDataProvider):
             if symbol:
                 params['symbol'] = symbol.upper()
             
-            # CORRECTED: Use earnings_calendar instead of calendar/earnings
-            data = await self._make_request('earnings_calendar', params)
+            # Correct endpoint: calendar/earnings
+            data = await self._make_request('calendar/earnings', params)
             
             # Finnhub returns earnings calendar in 'earningsCalendar' key
             earnings_data = data.get('earningsCalendar', []) if data else []
@@ -509,7 +509,7 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_earnings_transcript(self, symbol: str, year: str, quarter: str) -> Dict[str, Any]:
         """
-        Get earnings call transcript from Finnhub
+        Get earnings call transcript using stock/transcripts endpoints
         
         Args:
             symbol: Stock symbol
@@ -520,16 +520,15 @@ class FinnhubProvider(MarketDataProvider):
             Dictionary containing transcript data
         """
         try:
-            # CORRECTED: Use transcripts_list instead of stock/transcripts/list
+            # Get transcript list first using stock/transcripts-list
             params = {'symbol': symbol.upper()}
-            transcript_list = await self._make_request('transcripts_list', params)
+            transcript_list = await self._make_request('stock/transcripts-list', params)
             
             # Find the specific transcript for the given year and quarter
             transcripts = transcript_list.get('transcripts', []) if transcript_list else []
             target_transcript_id = None
             
             for transcript in transcripts:
-                # Match by year and quarter
                 transcript_year = str(transcript.get('year', ''))
                 transcript_quarter = str(transcript.get('quarter', ''))
                 
@@ -547,9 +546,9 @@ class FinnhubProvider(MarketDataProvider):
                     'error': 'Transcript not found'
                 }
             
-            # CORRECTED: Use transcripts instead of stock/transcripts
+            # Get actual transcript using stock/transcripts endpoint
             transcript_params = {'id': target_transcript_id}
-            transcript_data = await self._make_request('transcripts', transcript_params)
+            transcript_data = await self._make_request('stock/transcripts', transcript_params)
             
             return {
                 'symbol': symbol,
@@ -571,20 +570,35 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_economic_events(self, **kwargs) -> List[Dict[str, Any]]:
         """
-        Get economic calendar events from Finnhub
-        
-        Note: Finnhub doesn't have a generic economic calendar endpoint.
-        This method returns an empty list and logs a warning.
-        Use specific economic data endpoints instead.
+        Get economic calendar events using calendar/economic endpoint
         
         Args:
-            **kwargs: Additional parameters (ignored)
+            **kwargs: Additional parameters including from and to dates
         
         Returns:
-            Empty list (Finnhub doesn't support generic economic calendar)
+            List of economic events
         """
-        self._log_info("Finnhub doesn't provide a generic economic calendar endpoint. Use specific economic data indicators instead.")
-        return []
+        try:
+            # Set default date range if not provided
+            from_date = kwargs.get('from', (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'))
+            to_date = kwargs.get('to', datetime.now().strftime('%Y-%m-%d'))
+            
+            params = {
+                'from': from_date,
+                'to': to_date
+            }
+            
+            # Correct endpoint: calendar/economic
+            data = await self._make_request('calendar/economic', params)
+            
+            if not data or 'economicCalendar' not in data:
+                return []
+            
+            return data['economicCalendar']
+            
+        except Exception as e:
+            self._log_error("get_economic_events", f"Error fetching economic events: {str(e)}")
+            return []
     
     async def get_economic_data(
         self, 
@@ -595,28 +609,52 @@ class FinnhubProvider(MarketDataProvider):
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        Get economic data from Finnhub
-        
-        Note: Finnhub requires specific economic indicator codes.
-        This is a placeholder implementation that returns empty data.
-        To use economic data, you need to specify individual indicators.
+        Get economic data from Finnhub calendar
         
         Args:
-            countries: List of country codes (not directly supported)
-            importance: Importance level (not directly supported)
-            start_date: Start date (not directly supported)
-            end_date: End date (not directly supported)
-            limit: Maximum number of events (not directly supported)
+            countries: List of country codes (filtered client-side)
+            importance: Importance level (filtered client-side)
+            start_date: Start date
+            end_date: End date
+            limit: Maximum number of events
             
         Returns:
-            Empty list (requires specific economic indicator implementation)
+            List of economic events
         """
-        self._log_info("Finnhub economic data requires specific indicator codes. Use get_economic_indicator() method instead.")
-        return []
+        try:
+            # Set default dates
+            end_date = end_date or date.today()
+            start_date = start_date or (end_date - timedelta(days=30))
+            
+            params = {
+                'from': start_date.strftime('%Y-%m-%d'),
+                'to': end_date.strftime('%Y-%m-%d')
+            }
+            
+            # Get economic calendar
+            data = await self._make_request('calendar/economic', params)
+            
+            if not data or 'economicCalendar' not in data:
+                return []
+            
+            events = data['economicCalendar']
+            
+            # Apply client-side filters
+            if countries:
+                events = [e for e in events if e.get('country', '').upper() in [c.upper() for c in countries]]
+            
+            if importance is not None:
+                events = [e for e in events if e.get('impact', 0) >= importance]
+            
+            return events[:limit]
+            
+        except Exception as e:
+            self._log_error("get_economic_data", f"Failed to fetch economic data: {str(e)}")
+            return []
     
     async def get_economic_indicator(self, indicator_code: str) -> Dict[str, Any]:
         """
-        Get specific economic indicator data from Finnhub
+        Get specific economic indicator data using economic endpoint
         
         Args:
             indicator_code: Finnhub economic indicator code (e.g., 'MA-USA-656880' for US GDP)
@@ -650,7 +688,7 @@ class FinnhubProvider(MarketDataProvider):
         past: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Get earnings calendar data for a symbol
+        Get earnings calendar data for a symbol using stock/earnings endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -666,10 +704,9 @@ class FinnhubProvider(MarketDataProvider):
             return []
             
         try:
-            # Validate inputs
-            limit = max(1, min(100, limit))  # Clamp between 1-100
+            limit = max(1, min(100, limit))
             
-            # Get earnings calendar
+            # Get earnings using correct endpoint
             data = await self._make_request("stock/earnings", {
                 'symbol': symbol.upper()
             })
@@ -689,10 +726,8 @@ class FinnhubProvider(MarketDataProvider):
                     # Parse date if available
                     if 'date' in item and item['date']:
                         if isinstance(item['date'], (int, float)):
-                            # Handle Unix timestamp
                             item['date'] = datetime.fromtimestamp(item['date'], tz=timezone.utc).date()
                         elif isinstance(item['date'], str):
-                            # Handle date string (YYYY-MM-DD)
                             try:
                                 item['date'] = datetime.strptime(item['date'], '%Y-%m-%d').date()
                             except ValueError:
@@ -702,14 +737,13 @@ class FinnhubProvider(MarketDataProvider):
                     if 'date' in item and isinstance(item['date'], date):
                         is_future = item['date'] > current_date
                         if (future and is_future) or (past and not is_future):
-                            # Standardize the earnings data
                             standardized = {
                                 'symbol': symbol.upper(),
                                 'date': item['date'],
                                 'eps_actual': self._safe_decimal(item.get('actual'), Decimal('0')),
                                 'eps_estimate': self._safe_decimal(item.get('estimate'), Decimal('0')),
-                                'revenue_actual': self._safe_decimal(item.get('revenueActual'), Decimal('0')) * 1000000,  # Convert to actual value
-                                'revenue_estimate': self._safe_decimal(item.get('revenueEstimate'), Decimal('0')) * 1000000,  # Convert to actual value
+                                'revenue_actual': self._safe_decimal(item.get('revenueActual'), Decimal('0')),
+                                'revenue_estimate': self._safe_decimal(item.get('revenueEstimate'), Decimal('0')),
                                 'period': item.get('period', ''),
                                 'year': item.get('year', 0),
                                 'quarter': item.get('quarter', 0),
@@ -733,22 +767,27 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_fundamentals(self, symbol: str) -> Dict[str, Any]:
         """
-        Get comprehensive fundamental metrics for a symbol
+        Get comprehensive fundamental metrics using company/basic-financials endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
             
         Returns:
-            Dictionary containing various fundamental metrics and ratios.
-            Returns empty dict on error or if no data is available.
+            Dictionary containing various fundamental metrics and ratios
         """
         if not symbol or not isinstance(symbol, str):
             self._log_error("Invalid Input", f"Invalid symbol: {symbol}")
             return {}
             
         try:
-            # Get all available metrics
+            # Get basic financials using correct endpoint
             data = await self._make_request("stock/metric", {
+                'symbol': symbol.upper(),
+                'metric': 'all'
+            })
+            
+            # Also get basic financials for additional data
+            basic_financials = await self._make_request("company/basic-financials", {
                 'symbol': symbol.upper(),
                 'metric': 'all'
             })
@@ -757,72 +796,70 @@ class FinnhubProvider(MarketDataProvider):
                 return {}
                 
             metrics = data.get('metric', {})
+            basic_data = basic_financials.get('metric', {}) if basic_financials else {}
             
-            # Process and standardize the metrics
+            # Merge data sources
+            all_metrics = {**metrics, **basic_data}
+            
             return {
                 # Basic Info
                 'symbol': symbol.upper(),
                 'provider': self.name,
-                'name': metrics.get('name', ''),
-                'sector': metrics.get('sector', ''),
-                'industry': metrics.get('industry', ''),
                 
                 # Valuation Metrics
-                'market_cap': self._safe_decimal(metrics.get('marketCapitalization')),
-                'enterprise_value': self._safe_decimal(metrics.get('enterpriseValue')),
-                'pe_ratio': self._safe_decimal(metrics.get('peBasicExclExtraTTM')),
-                'forward_pe': self._safe_decimal(metrics.get('peExclExtraTTM')),
-                'peg_ratio': self._safe_decimal(metrics.get('pegRatio')),
-                'price_to_sales': self._safe_decimal(metrics.get('psAnnual')),
-                'price_to_book': self._safe_decimal(metrics.get('pbAnnual')),
-                'price_to_fcf': self._safe_decimal(metrics.get('pfcfShareAnnual')),
-                'ev_to_ebitda': self._safe_decimal(metrics.get('evToEbitda')),
-                'ev_to_revenue': self._safe_decimal(metrics.get('evToRevenue')),
+                'market_cap': self._safe_decimal(all_metrics.get('marketCapitalization')),
+                'enterprise_value': self._safe_decimal(all_metrics.get('enterpriseValue')),
+                'pe_ratio': self._safe_decimal(all_metrics.get('peBasicExclExtraTTM')),
+                'forward_pe': self._safe_decimal(all_metrics.get('peExclExtraTTM')),
+                'peg_ratio': self._safe_decimal(all_metrics.get('pegRatio')),
+                'price_to_sales': self._safe_decimal(all_metrics.get('psAnnual')),
+                'price_to_book': self._safe_decimal(all_metrics.get('pbAnnual')),
+                'price_to_fcf': self._safe_decimal(all_metrics.get('pfcfShareAnnual')),
+                'ev_to_ebitda': self._safe_decimal(all_metrics.get('evToEbitda')),
+                'ev_to_revenue': self._safe_decimal(all_metrics.get('evToRevenue')),
                 
                 # Profitability
-                'gross_margin': self._safe_decimal(metrics.get('grossMarginAnnual')),
-                'operating_margin': self._safe_decimal(metrics.get('operatingMarginAnnual')),
-                'net_margin': self._safe_decimal(metrics.get('netMarginAnnual')),
-                'roa': self._safe_decimal(metrics.get('roaRfy')),
-                'roe': self._safe_decimal(metrics.get('roeRfy')),
-                'roic': self._safe_decimal(metrics.get('roicRfy')),
+                'gross_margin': self._safe_decimal(all_metrics.get('grossMarginAnnual')),
+                'operating_margin': self._safe_decimal(all_metrics.get('operatingMarginAnnual')),
+                'net_margin': self._safe_decimal(all_metrics.get('netMarginAnnual')),
+                'roa': self._safe_decimal(all_metrics.get('roaRfy')),
+                'roe': self._safe_decimal(all_metrics.get('roeRfy')),
+                'roic': self._safe_decimal(all_metrics.get('roicRfy')),
                 
                 # Financial Health
-                'current_ratio': self._safe_decimal(metrics.get('currentRatioAnnual')),
-                'quick_ratio': self._safe_decimal(metrics.get('quickRatioAnnual')),
-                'debt_to_equity': self._safe_decimal(metrics.get('ltDebtToEquityAnnual')),
-                'interest_coverage': self._safe_decimal(metrics.get('interestCoverage')),
+                'current_ratio': self._safe_decimal(all_metrics.get('currentRatioAnnual')),
+                'quick_ratio': self._safe_decimal(all_metrics.get('quickRatioAnnual')),
+                'debt_to_equity': self._safe_decimal(all_metrics.get('ltDebtToEquityAnnual')),
+                'interest_coverage': self._safe_decimal(all_metrics.get('interestCoverage')),
                 
                 # Growth
-                'revenue_growth_3y': self._safe_decimal(metrics.get('revenueGrowth3Y')),
-                'eps_growth_3y': self._safe_decimal(metrics.get('epsGrowth3Y')),
+                'revenue_growth_3y': self._safe_decimal(all_metrics.get('revenueGrowth3Y')),
+                'eps_growth_3y': self._safe_decimal(all_metrics.get('epsGrowth3Y')),
                 
                 # Dividends
-                'dividend_yield': self._safe_decimal(metrics.get('dividendYieldIndicatedAnnual')),
-                'dividend_rate': self._safe_decimal(metrics.get('dividendRatePerShareAnnual')),
-                'payout_ratio': self._safe_decimal(metrics.get('payoutRatioAnnual')),
-                'dividend_growth_3y': self._safe_decimal(metrics.get('dividendGrowth3Y')),
+                'dividend_yield': self._safe_decimal(all_metrics.get('dividendYieldIndicatedAnnual')),
+                'dividend_rate': self._safe_decimal(all_metrics.get('dividendRatePerShareAnnual')),
+                'payout_ratio': self._safe_decimal(all_metrics.get('payoutRatioAnnual')),
+                'dividend_growth_3y': self._safe_decimal(all_metrics.get('dividendGrowth3Y')),
                 
                 # Price Data
-                '52_week_high': self._safe_decimal(metrics.get('52WeekHigh')),
-                '52_week_low': self._safe_decimal(metrics.get('52WeekLow')),
-                '50_day_ma': self._safe_decimal(metrics.get('price50DayMA')),
-                '200_day_ma': self._safe_decimal(metrics.get('price200DayMA')),
+                '52_week_high': self._safe_decimal(all_metrics.get('52WeekHigh')),
+                '52_week_low': self._safe_decimal(all_metrics.get('52WeekLow')),
+                '50_day_ma': self._safe_decimal(all_metrics.get('price50DayMA')),
+                '200_day_ma': self._safe_decimal(all_metrics.get('price200DayMA')),
                 
                 # Volume
-                '10_day_avg_volume': self._safe_decimal(metrics.get('10DayAverageTradingVolume')),
-                '3_month_avg_volume': self._safe_decimal(metrics.get('3MonthAverageTradingVolume')),
+                '10_day_avg_volume': self._safe_decimal(all_metrics.get('10DayAverageTradingVolume')),
+                '3_month_avg_volume': self._safe_decimal(all_metrics.get('3MonthAverageTradingVolume')),
                 
                 # Per Share Data
-                'eps': self._safe_decimal(metrics.get('epsBasicExclExtraItemsTTM')),
-                'revenue_per_share': self._safe_decimal(metrics.get('revenuePerShareTTM')),
-                'book_value_per_share': self._safe_decimal(metrics.get('bookValuePerShareQuarterly')),
-                'free_cash_flow_per_share': self._safe_decimal(metrics.get('fcfShareAnnual')),
+                'eps': self._safe_decimal(all_metrics.get('epsBasicExclExtraItemsTTM')),
+                'revenue_per_share': self._safe_decimal(all_metrics.get('revenuePerShareTTM')),
+                'book_value_per_share': self._safe_decimal(all_metrics.get('bookValuePerShareQuarterly')),
+                'free_cash_flow_per_share': self._safe_decimal(all_metrics.get('fcfShareAnnual')),
                 
                 # Risk Metrics
-                'beta': self._safe_decimal(metrics.get('beta')),
-                'sharpe_ratio': self._safe_decimal(metrics.get('sharpeRatio')),
-                'sortino_ratio': self._safe_decimal(metrics.get('sortinoRatio')),
+                'beta': self._safe_decimal(all_metrics.get('beta')),
                 
                 # Timestamp
                 'as_of_date': datetime.now(timezone.utc).isoformat()
@@ -834,7 +871,7 @@ class FinnhubProvider(MarketDataProvider):
     
     async def search_symbols(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Search for symbols using Finnhub's symbol lookup
+        Search for symbols using search endpoint
         
         Args:
             query: Search query (company name, symbol, etc.)
@@ -877,7 +914,7 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_market_status(self, exchange: str = 'US') -> Dict[str, Any]:
         """
-        Get market status for a specific exchange
+        Get market status using stock/market-status endpoint
         
         Args:
             exchange: Exchange code (e.g., 'US', 'LSE', 'TSE')
@@ -907,7 +944,7 @@ class FinnhubProvider(MarketDataProvider):
     
     async def get_company_peers(self, symbol: str) -> List[str]:
         """
-        Get company peers/competitors
+        Get company peers using stock/peers endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -938,7 +975,7 @@ class FinnhubProvider(MarketDataProvider):
         end_date: Optional[date] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get insider transactions for a symbol
+        Get insider transactions using stock/insider-transactions endpoint
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -988,6 +1025,289 @@ class FinnhubProvider(MarketDataProvider):
             
         except Exception as e:
             self._log_error("get_insider_transactions", f"Failed to fetch insider transactions for {symbol}: {str(e)}")
+            return []
+    
+    # Additional methods based on official Finnhub API
+    async def get_ipo_calendar(
+        self, 
+        start_date: Optional[date] = None, 
+        end_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get IPO calendar using calendar/ipo endpoint
+        
+        Args:
+            start_date: Start date (default: today)
+            end_date: End date (default: 30 days from now)
+            
+        Returns:
+            List of IPO events
+        """
+        try:
+            end_date = end_date or (date.today() + timedelta(days=30))
+            start_date = start_date or date.today()
+            
+            params = {
+                'from': start_date.strftime('%Y-%m-%d'),
+                'to': end_date.strftime('%Y-%m-%d')
+            }
+            
+            data = await self._make_request('calendar/ipo', params)
+            
+            if not data or 'ipoCalendar' not in data:
+                return []
+                
+            return data['ipoCalendar']
+            
+        except Exception as e:
+            self._log_error("get_ipo_calendar", f"Failed to fetch IPO calendar: {str(e)}")
+            return []
+    
+    async def get_stock_dividends(
+        self, 
+        symbol: str, 
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get stock dividends using stock/dividend endpoint
+        
+        Args:
+            symbol: Stock symbol
+            start_date: Start date (default: 1 year ago)
+            end_date: End date (default: today)
+            
+        Returns:
+            List of dividend data
+        """
+        try:
+            end_date = end_date or date.today()
+            start_date = start_date or (end_date - timedelta(days=365))
+            
+            params = {
+                'symbol': symbol.upper(),
+                'from': start_date.strftime('%Y-%m-%d'),
+                'to': end_date.strftime('%Y-%m-%d')
+            }
+            
+            data = await self._make_request('stock/dividend', params)
+            
+            if not data or not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            self._log_error("get_stock_dividends", f"Failed to fetch dividends for {symbol}: {str(e)}")
+            return []
+    
+    async def get_stock_splits(
+        self, 
+        symbol: str, 
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get stock splits using stock/split endpoint
+        
+        Args:
+            symbol: Stock symbol
+            start_date: Start date (default: 5 years ago)
+            end_date: End date (default: today)
+            
+        Returns:
+            List of stock split data
+        """
+        try:
+            end_date = end_date or date.today()
+            start_date = start_date or (end_date - timedelta(days=1825))  # 5 years
+            
+            params = {
+                'symbol': symbol.upper(),
+                'from': start_date.strftime('%Y-%m-%d'),
+                'to': end_date.strftime('%Y-%m-%d')
+            }
+            
+            data = await self._make_request('stock/split', params)
+            
+            if not data or not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            self._log_error("get_stock_splits", f"Failed to fetch splits for {symbol}: {str(e)}")
+            return []
+    
+    async def get_recommendation_trends(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get recommendation trends using stock/recommendation endpoint
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dictionary containing recommendation trends
+        """
+        try:
+            params = {'symbol': symbol.upper()}
+            data = await self._make_request('stock/recommendation', params)
+            
+            if not data or not isinstance(data, list):
+                return {}
+                
+            return {
+                'symbol': symbol.upper(),
+                'recommendations': data,
+                'provider': self.name,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            self._log_error("get_recommendation_trends", f"Failed to fetch recommendations for {symbol}: {str(e)}")
+            return {}
+    
+    async def get_price_target(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get price target using stock/price-target endpoint
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dictionary containing price target data
+        """
+        try:
+            params = {'symbol': symbol.upper()}
+            data = await self._make_request('stock/price-target', params)
+            
+            if not data:
+                return {}
+                
+            return {
+                'symbol': symbol.upper(),
+                'target_high': self._safe_decimal(data.get('targetHigh')),
+                'target_low': self._safe_decimal(data.get('targetLow')),
+                'target_mean': self._safe_decimal(data.get('targetMean')),
+                'target_median': self._safe_decimal(data.get('targetMedian')),
+                'last_updated': data.get('lastUpdated'),
+                'provider': self.name
+            }
+            
+        except Exception as e:
+            self._log_error("get_price_target", f"Failed to fetch price target for {symbol}: {str(e)}")
+            return {}
+    
+    async def get_upgrade_downgrade(
+        self, 
+        symbol: str, 
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get upgrade/downgrade events using stock/upgrade-downgrade endpoint
+        
+        Args:
+            symbol: Stock symbol
+            start_date: Start date (default: 30 days ago)
+            end_date: End date (default: today)
+            
+        Returns:
+            List of upgrade/downgrade events
+        """
+        try:
+            end_date = end_date or date.today()
+            start_date = start_date or (end_date - timedelta(days=30))
+            
+            params = {
+                'symbol': symbol.upper(),
+                'from': start_date.strftime('%Y-%m-%d'),
+                'to': end_date.strftime('%Y-%m-%d')
+            }
+            
+            data = await self._make_request('stock/upgrade-downgrade', params)
+            
+            if not data or not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            self._log_error("get_upgrade_downgrade", f"Failed to fetch upgrades/downgrades for {symbol}: {str(e)}")
+            return []
+    
+    async def get_stock_symbols(self, exchange: str = 'US') -> List[Dict[str, Any]]:
+        """
+        Get all stock symbols for an exchange using stock/symbol endpoint
+        
+        Args:
+            exchange: Exchange code (default: 'US')
+            
+        Returns:
+            List of stock symbols
+        """
+        try:
+            params = {'exchange': exchange.upper()}
+            data = await self._make_request('stock/symbol', params)
+            
+            if not data or not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            self._log_error("get_stock_symbols", f"Failed to fetch symbols for {exchange}: {str(e)}")
+            return []
+    
+    async def get_forex_rates(self, base: str = 'USD') -> Dict[str, Any]:
+        """
+        Get forex rates using forex/rates endpoint
+        
+        Args:
+            base: Base currency (default: 'USD')
+            
+        Returns:
+            Dictionary containing forex rates
+        """
+        try:
+            params = {'base': base.upper()}
+            data = await self._make_request('forex/rates', params)
+            
+            if not data:
+                return {}
+                
+            return {
+                'base': base.upper(),
+                'rates': data,
+                'provider': self.name,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            self._log_error("get_forex_rates", f"Failed to fetch forex rates for {base}: {str(e)}")
+            return {}
+    
+    async def get_crypto_symbols(self, exchange: str = 'BINANCE') -> List[Dict[str, Any]]:
+        """
+        Get crypto symbols using crypto/symbol endpoint
+        
+        Args:
+            exchange: Crypto exchange (default: 'BINANCE')
+            
+        Returns:
+            List of crypto symbols
+        """
+        try:
+            params = {'exchange': exchange.upper()}
+            data = await self._make_request('crypto/symbol', params)
+            
+            if not data or not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            self._log_error("get_crypto_symbols", f"Failed to fetch crypto symbols for {exchange}: {str(e)}")
             return []
     
     async def close(self):

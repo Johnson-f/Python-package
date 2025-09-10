@@ -11,6 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# todo: add economic_events, earnings_transcript, 
 class MarketDataType(Enum):
     """Types of market data available"""
     QUOTE = "quote"
