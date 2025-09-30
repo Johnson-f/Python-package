@@ -9,7 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 # ==================== Base Models ====================
@@ -25,8 +25,7 @@ class MetaData(BaseModel):
     output_size: Optional[str] = Field(None, alias="5. Output Size")
     time_zone: Optional[str] = Field(None, alias="6. Time Zone")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True, extra='allow')
 
 
 class TimeSeriesData(BaseModel):
@@ -38,8 +37,7 @@ class TimeSeriesData(BaseModel):
     close: Decimal = Field(..., alias="4. close")
     volume: int = Field(..., alias="5. volume")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AdjustedTimeSeriesData(TimeSeriesData):
@@ -52,131 +50,86 @@ class AdjustedTimeSeriesData(TimeSeriesData):
 
 # ==================== Time Series Models ====================
 
+def _rename_dynamic_key(data: Any, field_name: str, search_term: str) -> Any:
+    if isinstance(data, dict):
+        dynamic_key = None
+        for key in data.keys():
+            if search_term in key:
+                dynamic_key = key
+                break
+        
+        if dynamic_key and dynamic_key != field_name:
+            data[field_name] = data.pop(dynamic_key)
+    return data
 
 class IntradayTimeSeries(BaseModel):
     """Response model for intraday time series data."""
 
     meta_data: MetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, TimeSeriesData] = Field(default_factory=dict)
+    time_series: Dict[str, TimeSeriesData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, TimeSeriesData]:
-        """Parse time series data from various possible key formats."""
-        if isinstance(v, dict):
-            # Find the time series key dynamically
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: TimeSeriesData(**data)
-                        for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Time Series')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class DailyTimeSeries(BaseModel):
     """Response model for daily time series data."""
 
     meta_data: MetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, TimeSeriesData] = Field(default_factory=dict)
+    time_series: Dict[str, TimeSeriesData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, TimeSeriesData]:
-        """Parse daily time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: TimeSeriesData(**data)
-                        for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Time Series (Daily)')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class DailyAdjustedTimeSeries(BaseModel):
     """Response model for daily adjusted time series data."""
 
     meta_data: MetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, AdjustedTimeSeriesData] = Field(default_factory=dict)
+    time_series: Dict[str, AdjustedTimeSeriesData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, AdjustedTimeSeriesData]:
-        """Parse daily adjusted time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: AdjustedTimeSeriesData(**data)
-                        for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Time Series (Daily)')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class WeeklyTimeSeries(BaseModel):
     """Response model for weekly time series data."""
 
     meta_data: MetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, TimeSeriesData] = Field(default_factory=dict)
+    time_series: Dict[str, TimeSeriesData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, TimeSeriesData]:
-        """Parse weekly time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: TimeSeriesData(**data)
-                        for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Weekly Time Series')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class MonthlyTimeSeries(BaseModel):
     """Response model for monthly time series data."""
 
     meta_data: MetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, TimeSeriesData] = Field(default_factory=dict)
+    time_series: Dict[str, TimeSeriesData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, TimeSeriesData]:
-        """Parse monthly time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: TimeSeriesData(**data)
-                        for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Monthly Time Series')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== Quote & Search Models ====================
@@ -196,8 +149,7 @@ class GlobalQuote(BaseModel):
     change: Decimal = Field(..., alias="09. change")
     change_percent: str = Field(..., alias="10. change percent")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class QuoteResponse(BaseModel):
@@ -205,8 +157,7 @@ class QuoteResponse(BaseModel):
 
     global_quote: GlobalQuote = Field(..., alias="Global Quote")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SearchMatch(BaseModel):
@@ -222,8 +173,7 @@ class SearchMatch(BaseModel):
     currency: str = Field(..., alias="8. currency")
     match_score: str = Field(..., alias="9. matchScore")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SymbolSearchResponse(BaseModel):
@@ -231,8 +181,7 @@ class SymbolSearchResponse(BaseModel):
 
     best_matches: List[SearchMatch] = Field(default_factory=list, alias="bestMatches")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== Fundamental Data Models ====================
@@ -255,7 +204,6 @@ class CompanyOverview(BaseModel):
     fiscal_year_end: Optional[str] = Field(None, alias="FiscalYearEnd")
     latest_quarter: Optional[str] = Field(None, alias="LatestQuarter")
     
-    # Financial metrics
     market_capitalization: Optional[str] = Field(None, alias="MarketCapitalization")
     ebitda: Optional[str] = Field(None, alias="EBITDA")
     pe_ratio: Optional[str] = Field(None, alias="PERatio")
@@ -272,22 +220,14 @@ class CompanyOverview(BaseModel):
     revenue_ttm: Optional[str] = Field(None, alias="RevenueTTM")
     gross_profit_ttm: Optional[str] = Field(None, alias="GrossProfitTTM")
     diluted_eps_ttm: Optional[str] = Field(None, alias="DilutedEPSTTM")
-    quarterly_earnings_growth_yoy: Optional[str] = Field(
-        None, alias="QuarterlyEarningsGrowthYOY"
-    )
-    quarterly_revenue_growth_yoy: Optional[str] = Field(
-        None, alias="QuarterlyRevenueGrowthYOY"
-    )
+    quarterly_earnings_growth_yoy: Optional[str] = Field(None, alias="QuarterlyEarningsGrowthYOY")
+    quarterly_revenue_growth_yoy: Optional[str] = Field(None, alias="QuarterlyRevenueGrowthYOY")
     analyst_target_price: Optional[str] = Field(None, alias="AnalystTargetPrice")
-    analyst_rating_strong_buy: Optional[str] = Field(
-        None, alias="AnalystRatingStrongBuy"
-    )
+    analyst_rating_strong_buy: Optional[str] = Field(None, alias="AnalystRatingStrongBuy")
     analyst_rating_buy: Optional[str] = Field(None, alias="AnalystRatingBuy")
     analyst_rating_hold: Optional[str] = Field(None, alias="AnalystRatingHold")
     analyst_rating_sell: Optional[str] = Field(None, alias="AnalystRatingSell")
-    analyst_rating_strong_sell: Optional[str] = Field(
-        None, alias="AnalystRatingStrongSell"
-    )
+    analyst_rating_strong_sell: Optional[str] = Field(None, alias="AnalystRatingStrongSell")
     trailing_pe: Optional[str] = Field(None, alias="TrailingPE")
     forward_pe: Optional[str] = Field(None, alias="ForwardPE")
     price_to_sales_ratio_ttm: Optional[str] = Field(None, alias="PriceToSalesRatioTTM")
@@ -303,8 +243,7 @@ class CompanyOverview(BaseModel):
     dividend_date: Optional[str] = Field(None, alias="DividendDate")
     ex_dividend_date: Optional[str] = Field(None, alias="ExDividendDate")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class EarningsData(BaseModel):
@@ -316,23 +255,17 @@ class EarningsData(BaseModel):
     surprise: Optional[str] = Field(None, alias="surprise")
     surprise_percentage: Optional[str] = Field(None, alias="surprisePercentage")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Earnings(BaseModel):
     """Response model for earnings endpoint."""
 
     symbol: str
-    annual_earnings: List[EarningsData] = Field(
-        default_factory=list, alias="annualEarnings"
-    )
-    quarterly_earnings: List[EarningsData] = Field(
-        default_factory=list, alias="quarterlyEarnings"
-    )
+    annual_earnings: List[EarningsData] = Field(default_factory=list, alias="annualEarnings")
+    quarterly_earnings: List[EarningsData] = Field(default_factory=list, alias="quarterlyEarnings")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== News & Sentiment Models ====================
@@ -384,19 +317,12 @@ class NewsSentimentResponse(BaseModel):
 # ==================== Forex Models ====================
 
 
-class ForexMetaData(BaseModel):
+class ForexMetaData(MetaData):
     """Metadata for forex responses."""
 
-    information: str = Field(..., alias="1. Information")
     from_symbol: str = Field(..., alias="2. From Symbol")
     to_symbol: str = Field(..., alias="3. To Symbol")
-    last_refreshed: str = Field(..., alias="4. Last Refreshed")
-    interval: Optional[str] = Field(None, alias="5. Interval")
-    output_size: Optional[str] = Field(None, alias="6. Output Size")
     time_zone: str = Field(..., alias="7. Time Zone")
-
-    class Config:
-        populate_by_name = True
 
 
 class ForexData(BaseModel):
@@ -407,32 +333,21 @@ class ForexData(BaseModel):
     low: Decimal = Field(..., alias="3. low")
     close: Decimal = Field(..., alias="4. close")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ForexTimeSeries(BaseModel):
     """Response model for forex time series data."""
 
     meta_data: ForexMetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, ForexData] = Field(default_factory=dict)
+    time_series: Dict[str, ForexData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, ForexData]:
-        """Parse forex time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: ForexData(**data) for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Time Series FX')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ExchangeRate(BaseModel):
@@ -448,39 +363,28 @@ class ExchangeRate(BaseModel):
     bid_price: Optional[Decimal] = Field(None, alias="8. Bid Price")
     ask_price: Optional[Decimal] = Field(None, alias="9. Ask Price")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ExchangeRateResponse(BaseModel):
-    """Response model for exchange rate endpoint."""
+    """Wrapper for exchange rate response."""
 
-    realtime_currency_exchange_rate: ExchangeRate = Field(
-        ..., alias="Realtime Currency Exchange Rate"
-    )
+    realtime_currency_exchange_rate: ExchangeRate = Field(..., alias="Realtime Currency Exchange Rate")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== Crypto Models ====================
 
 
-class CryptoMetaData(BaseModel):
+class CryptoMetaData(MetaData):
     """Metadata for crypto responses."""
 
-    information: str = Field(..., alias="1. Information")
     digital_currency_code: str = Field(..., alias="2. Digital Currency Code")
     digital_currency_name: str = Field(..., alias="3. Digital Currency Name")
     market_code: str = Field(..., alias="4. Market Code")
     market_name: str = Field(..., alias="5. Market Name")
-    last_refreshed: str = Field(..., alias="6. Last Refreshed")
-    interval: Optional[str] = Field(None, alias="7. Interval")
-    output_size: Optional[str] = Field(None, alias="8. Output Size")
-    time_zone: str = Field(..., alias="9. Time Zone")
-
-    class Config:
-        populate_by_name = True
+    time_zone: str = Field(..., alias="7. Time Zone")
 
 
 class CryptoData(BaseModel):
@@ -492,50 +396,35 @@ class CryptoData(BaseModel):
     close: Decimal = Field(..., alias="4. close")
     volume: Decimal = Field(..., alias="5. volume")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class CryptoTimeSeries(BaseModel):
     """Response model for crypto time series data."""
 
     meta_data: CryptoMetaData = Field(..., alias="Meta Data")
-    time_series: Dict[str, CryptoData] = Field(default_factory=dict)
+    time_series: Dict[str, CryptoData]
 
-    @field_validator("time_series", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_time_series(cls, v: Any) -> Dict[str, CryptoData]:
-        """Parse crypto time series data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Time Series" in key:
-                    raw_data = v[key]
-                    return {
-                        timestamp: CryptoData(**data) for timestamp, data in raw_data.items()
-                    }
-            return {}
-        return v
+    def parse_time_series(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'time_series', 'Time Series')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== Technical Indicators Models ====================
 
 
-class TechnicalIndicatorMetaData(BaseModel):
+class TechnicalIndicatorMetaData(MetaData):
     """Metadata for technical indicator responses."""
 
     symbol: str = Field(..., alias="1: Symbol")
     indicator: str = Field(..., alias="2: Indicator")
     last_refreshed: str = Field(..., alias="3: Last Refreshed")
     interval: str = Field(..., alias="4: Interval")
-    time_period: Optional[int] = Field(None, alias="5: Time Period")
     series_type: Optional[str] = Field(None, alias="6: Series Type")
     time_zone: str = Field(..., alias="7: Time Zone")
-
-    class Config:
-        populate_by_name = True
 
 
 class TechnicalIndicatorData(BaseModel):
@@ -543,29 +432,21 @@ class TechnicalIndicatorData(BaseModel):
 
     value: Decimal
 
-    class Config:
-        extra = "allow"  # Allow additional fields for different indicators
+    model_config = ConfigDict(extra="allow")
 
 
 class TechnicalIndicatorResponse(BaseModel):
     """Response model for technical indicators."""
 
     meta_data: TechnicalIndicatorMetaData = Field(..., alias="Meta Data")
-    technical_analysis: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    technical_analysis: Dict[str, Dict[str, str]]
 
-    @field_validator("technical_analysis", mode="before")
+    @model_validator(mode='before')
     @classmethod
-    def parse_technical_analysis(cls, v: Any) -> Dict[str, Dict[str, str]]:
-        """Parse technical analysis data."""
-        if isinstance(v, dict):
-            for key in v.keys():
-                if "Technical Analysis" in key:
-                    return v[key]
-            return {}
-        return v
+    def parse_technical_analysis(cls, data: Any) -> Any:
+        return _rename_dynamic_key(data, 'technical_analysis', 'Technical Analysis')
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ==================== Economic Indicators Models ====================
