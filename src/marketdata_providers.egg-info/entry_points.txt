@@ -1,2 +1,0 @@
-[console_scripts]
-marketdata-cli = marketdata_providers.cli:main
