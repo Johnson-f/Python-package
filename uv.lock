@@ -938,6 +938,7 @@ dependencies = [
     { name = "defeatbeta-api" },
     { name = "finnhub-python" },
     { name = "polygon-api-client" },
+    { name = "pydantic" },
     { name = "yfinance" },
 ]
 
@@ -947,6 +948,7 @@ requires-dist = [
     { name = "defeatbeta-api", specifier = ">=0.0.18" },
     { name = "finnhub-python", specifier = ">=2.4.25" },
     { name = "polygon-api-client", specifier = ">=1.15.4" },
+    { name = "pydantic", specifier = ">=2.11.9" },
     { name = "yfinance", specifier = ">=0.2.66" },
 ]
 
