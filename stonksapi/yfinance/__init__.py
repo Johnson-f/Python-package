@@ -15,6 +15,21 @@ Quick Start:
 """
 
 from .client import YFinanceClient
-from .models import TickerInfo
+from .models import (
+    TickerInfo,
+    HistoricalData,
+    Dividend,
+    Split,
+    FinancialStatement,
+    FinancialReport,
+)
 
-__all__ = ["YFinanceClient", "TickerInfo"]
+__all__ = [
+    "YFinanceClient",
+    "TickerInfo",
+    "HistoricalData",
+    "Dividend",
+    "Split",
+    "FinancialStatement",
+    "FinancialReport",
+]

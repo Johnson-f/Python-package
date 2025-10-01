@@ -1,7 +1,7 @@
 """
 Pydantic models for yfinance API responses.
 """
-
+from datetime import date as DateType
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict, HttpUrl
 
@@ -66,3 +66,39 @@ class TickerInfo(BaseModel):
     last_split_date: Optional[int] = Field(None, alias='lastSplitDate')
 
     model_config = ConfigDict(populate_by_name=True, extra='ignore')
+
+
+class StockAction(BaseModel):
+    """Base model for stock actions like dividends and splits."""
+    date: DateType
+
+class Dividend(StockAction):
+    """Pydantic model for a dividend payment."""
+    dividend: float
+
+class Split(StockAction):
+    """Pydantic model for a stock split event."""
+    stock_splits: float
+
+class HistoricalData(BaseModel):
+    """Pydantic model for a single row of historical market data."""
+    date: DateType = Field(alias='Date')
+    open: float = Field(alias='Open')
+    high: float = Field(alias='High')
+    low: float = Field(alias='Low')
+    close: float = Field(alias='Close')
+    volume: int = Field(alias='Volume')
+    dividends: float = Field(alias='Dividends')
+    stock_splits: float = Field(alias='Stock Splits')
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FinancialReport(BaseModel):
+    """Pydantic model for a single financial report (e.g., for a specific year)."""
+    date: DateType
+    metrics: Dict[str, Any]
+
+class FinancialStatement(BaseModel):
+    """Pydantic model for a company's financial statements."""
+    reports: List[FinancialReport]
