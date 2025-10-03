@@ -31,7 +31,7 @@ class PolygonClient:
         https://polygon.io/docs/stocks/get_v3_reference_tickers__ticker
         """
         response = self._client.get_ticker_details(ticker)
-        return TickerDetails.model_validate(response)
+        return TickerDetails.model_validate(vars(response))
 
     def get_aggregates(
         self, ticker: str, multiplier: int, timespan: str, from_date: str, to_date: str
@@ -41,15 +41,15 @@ class PolygonClient:
         https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
         """
         aggs = self._client.get_aggs(ticker, multiplier, timespan, from_date, to_date)
-        return [Aggregate.model_validate(agg) for agg in aggs]
+        return [Aggregate.model_validate(vars(agg)) for agg in aggs]
 
     def get_daily_open_close(self, ticker: str, date: str) -> DailyOpenClose:
         """
         Get the daily open, close and after hours prices of a stock.
         https://polygon.io/docs/stocks/get_v1_open-close__stocksticker___date
         """
-        resp = self._client.get_daily_open_close(ticker, date)
-        return DailyOpenClose.model_validate(resp)
+        resp = self._client.get_daily_open_close_agg(ticker, date)
+        return DailyOpenClose.model_validate(vars(resp))
 
     def get_last_quote(self, ticker: str) -> LastQuote:
         """
@@ -57,22 +57,29 @@ class PolygonClient:
         https://polygon.io/docs/stocks/get_v2_last_nbbo__stocksticker
         """
         resp = self._client.get_last_quote(ticker)
-        return LastQuote.model_validate(resp.last)
+        return LastQuote.model_validate(vars(resp.last))
 
     def get_market_news(self, limit: int = 100) -> List[NewsArticle]:
         """
         Get the latest market news.
         https://polygon.io/docs/stocks/get_v2_reference_news
         """
-        resp = self._client.get_news(limit=limit)
-        return [NewsArticle.model_validate(news) for news in resp]
+        resp_generator = self._client.list_ticker_news(limit=limit)
+        news_items = []
+        for news_item in resp_generator:
+            news_items.append(news_item)
+        return [NewsArticle.model_validate(news) for news in news_items]
 
     def get_sma(
         self,
         ticker: str,
-        timestamp: str,
         timespan: str,
         window: int,
+        timestamp: Optional[str] = None,
+        timestamp_gt: Optional[str] = None,
+        timestamp_gte: Optional[str] = None,
+        timestamp_lt: Optional[str] = None,
+        timestamp_lte: Optional[str] = None,
         series_type: str = "close",
         expand_underlying: bool = False,
     ) -> List[IndicatorValue]:
@@ -82,20 +89,28 @@ class PolygonClient:
         """
         resp = self._client.get_sma(
             ticker,
-            timestamp=timestamp,
             timespan=timespan,
             window=window,
+            timestamp=timestamp,
+            timestamp_gt=timestamp_gt,
+            timestamp_gte=timestamp_gte,
+            timestamp_lt=timestamp_lt,
+            timestamp_lte=timestamp_lte,
             series_type=series_type,
             expand_underlying=expand_underlying,
         )
-        return [IndicatorValue.model_validate(val) for val in resp.values]
+        return [IndicatorValue.model_validate(vars(val)) for val in resp.values]
 
     def get_ema(
         self,
         ticker: str,
-        timestamp: str,
         timespan: str,
         window: int,
+        timestamp: Optional[str] = None,
+        timestamp_gt: Optional[str] = None,
+        timestamp_gte: Optional[str] = None,
+        timestamp_lt: Optional[str] = None,
+        timestamp_lte: Optional[str] = None,
         series_type: str = "close",
         expand_underlying: bool = False,
     ) -> List[IndicatorValue]:
@@ -105,19 +120,27 @@ class PolygonClient:
         """
         resp = self._client.get_ema(
             ticker,
-            timestamp=timestamp,
             timespan=timespan,
             window=window,
+            timestamp=timestamp,
+            timestamp_gt=timestamp_gt,
+            timestamp_gte=timestamp_gte,
+            timestamp_lt=timestamp_lt,
+            timestamp_lte=timestamp_lte,
             series_type=series_type,
             expand_underlying=expand_underlying,
         )
-        return [IndicatorValue.model_validate(val) for val in resp.values]
+        return [IndicatorValue.model_validate(vars(val)) for val in resp.values]
 
     def get_macd(
         self,
         ticker: str,
-        timestamp: str,
         timespan: str,
+        timestamp: Optional[str] = None,
+        timestamp_gt: Optional[str] = None,
+        timestamp_gte: Optional[str] = None,
+        timestamp_lt: Optional[str] = None,
+        timestamp_lte: Optional[str] = None,
         short_window: int = 12,
         long_window: int = 26,
         signal_window: int = 9,
@@ -130,22 +153,30 @@ class PolygonClient:
         """
         resp = self._client.get_macd(
             ticker,
-            timestamp=timestamp,
             timespan=timespan,
+            timestamp=timestamp,
+            timestamp_gt=timestamp_gt,
+            timestamp_gte=timestamp_gte,
+            timestamp_lt=timestamp_lt,
+            timestamp_lte=timestamp_lte,
             short_window=short_window,
             long_window=long_window,
             signal_window=signal_window,
             series_type=series_type,
             expand_underlying=expand_underlying,
         )
-        return [MACDValue.model_validate(val) for val in resp.values]
+        return [MACDValue.model_validate(vars(val)) for val in resp.values]
 
     def get_rsi(
         self,
         ticker: str,
-        timestamp: str,
         timespan: str,
         window: int = 14,
+        timestamp: Optional[str] = None,
+        timestamp_gt: Optional[str] = None,
+        timestamp_gte: Optional[str] = None,
+        timestamp_lt: Optional[str] = None,
+        timestamp_lte: Optional[str] = None,
         series_type: str = "close",
         expand_underlying: bool = False,
     ) -> List[IndicatorValue]:
@@ -155,25 +186,44 @@ class PolygonClient:
         """
         resp = self._client.get_rsi(
             ticker,
-            timestamp=timestamp,
             timespan=timespan,
             window=window,
+            timestamp=timestamp,
+            timestamp_gt=timestamp_gt,
+            timestamp_gte=timestamp_gte,
+            timestamp_lt=timestamp_lt,
+            timestamp_lte=timestamp_lte,
             series_type=series_type,
             expand_underlying=expand_underlying,
         )
-        return [IndicatorValue.model_validate(val) for val in resp.values]
+        if resp and hasattr(resp, 'values'):
+            return [IndicatorValue.model_validate(vars(val)) for val in resp.values]
+        return []
 
     def list_option_contracts(
-        self, underlying_ticker: str, limit: int = 1000
+        self,
+        underlying_ticker: str,
+        limit: int = 1000,
+        expired: Optional[bool] = None,
+        expiration_date_lt: Optional[str] = None,
+        expiration_date_lte: Optional[str] = None,
+        expiration_date_gt: Optional[str] = None,
+        expiration_date_gte: Optional[str] = None,
     ) -> List[OptionContract]:
         """
         List all option contracts for an underlying ticker.
         https://polygon.io/docs/options/get_v3_reference_options_contracts
         """
         resp = self._client.list_options_contracts(
-            underlying_ticker=underlying_ticker, limit=limit
+            underlying_ticker=underlying_ticker,
+            limit=limit,
+            expired=expired,
+            expiration_date_lt=expiration_date_lt,
+            expiration_date_lte=expiration_date_lte,
+            expiration_date_gt=expiration_date_gt,
+            expiration_date_gte=expiration_date_gte,
         )
-        return [OptionContract.model_validate(c) for c in resp]
+        return [OptionContract.model_validate(vars(c)) for c in resp]
 
     def get_last_quote_for_option(
         self, option_ticker: str
@@ -183,7 +233,7 @@ class PolygonClient:
         https://polygon.io/docs/options/get_v2_last_nbbo__optionsticker
         """
         resp = self._client.get_last_quote_for_option_contract(option_ticker)
-        return LastQuoteForOption.model_validate(resp.last)
+        return LastQuoteForOption.model_validate(vars(resp.last))
 
     def get_stock_financials(
         self, ticker: str, limit: int = 100
@@ -192,5 +242,8 @@ class PolygonClient:
         Get the historical financials for a stock.
         https://polygon.io/docs/stocks/get_vx_reference_financials
         """
-        resp = self._client.get_stock_financials(ticker, limit=limit)
-        return [StockFinancial.model_validate(fin) for fin in resp]
+        resp_generator = self._client.vx.list_stock_financials(ticker, limit=limit)
+        financial_items = []
+        for fin_item in resp_generator:
+            financial_items.append(fin_item)
+        return [StockFinancial.model_validate(fin) for fin in financial_items]

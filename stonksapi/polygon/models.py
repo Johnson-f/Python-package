@@ -18,14 +18,14 @@ class TickerDetails(BaseModel):
 
 
 class Aggregate(BaseModel):
-    open: float = Field(alias='o')
-    high: float = Field(alias='h')
-    low: float = Field(alias='l')
-    close: float = Field(alias='c')
-    volume: int = Field(alias='v')
-    vwap: Optional[float] = Field(None, alias='vw')
-    timestamp: int = Field(alias='t')
-    transactions: Optional[int] = Field(None, alias='n')
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    vwap: Optional[float] = None
+    timestamp: int
+    transactions: Optional[int] = None
 
 
 class DailyOpenClose(BaseModel):
@@ -118,10 +118,10 @@ class StockFinancial(BaseModel):
     cik: str
     company_name: str
     end_date: str
-    filing_date: str
+    filing_date: Optional[str]
     financials: Financials
     fiscal_period: str
-    fiscal_year: str
-    source_filing_file_url: str
-    source_filing_url: str
+    fiscal_year: Optional[str]
+    source_filing_file_url: Optional[str]
+    source_filing_url: Optional[str]
     start_date: str
