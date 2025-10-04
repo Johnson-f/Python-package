@@ -73,21 +73,33 @@ class FinanceQueryClient:
             mover_type: Type of movers ('actives', 'gainers', 'losers')
             limit: Number of results to return
         """
-        params = {"type": mover_type, "limit": limit}
-        data = self._make_request("v1/movers", params=params)
+        # Use the correct endpoint format
+        data = self._make_request(f"v1/{mover_type}")
+        # Limit the results if needed
+        if limit and len(data) > limit:
+            data = data[:limit]
         return [MarketMover.model_validate(item) for item in data]
 
     def get_actives(self, limit: int = 25) -> List[MarketMover]:
         """Get the most active stocks."""
-        return self.get_market_movers("actives", limit)
+        data = self._make_request("v1/actives")
+        if limit and len(data) > limit:
+            data = data[:limit]
+        return [MarketMover.model_validate(item) for item in data]
 
     def get_gainers(self, limit: int = 25) -> List[MarketMover]:
         """Get the top gaining stocks."""
-        return self.get_market_movers("gainers", limit)
+        data = self._make_request("v1/gainers")
+        if limit and len(data) > limit:
+            data = data[:limit]
+        return [MarketMover.model_validate(item) for item in data]
 
     def get_losers(self, limit: int = 25) -> List[MarketMover]:
         """Get the top losing stocks."""
-        return self.get_market_movers("losers", limit)
+        data = self._make_request("v1/losers")
+        if limit and len(data) > limit:
+            data = data[:limit]
+        return [MarketMover.model_validate(item) for item in data]
 
     def get_stock_news(self, symbol: str) -> List[StockNews]:
         """Get news for a specific stock."""

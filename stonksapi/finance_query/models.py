@@ -136,9 +136,9 @@ class HolderType(str, Enum):
 # Financial Statements Models
 class FinancialStatement(BaseModel):
     symbol: str
-    statement_type: StatementType
+    statement_type: StatementType = Field(alias='statement_type')
     frequency: Frequency
-    statement: Dict[str, Dict[str, Union[int, float, None]]]
+    statement: Dict[str, Dict[str, str]]  # API returns all values as strings
 
 
 # Holders Models
@@ -339,8 +339,8 @@ class TechnicalIndicator(BaseModel):
 # Market Index Models
 class MarketIndex(BaseModel):
     name: str
-    value: Optional[str] = None
-    change: Optional[str] = None
+    value: Optional[Union[str, float]] = None
+    change: Optional[Union[str, float]] = None
     percent_change: Optional[str] = Field(None, alias='percentChange')
     five_days_return: Optional[str] = Field(None, alias='fiveDaysReturn')
     one_month_return: Optional[str] = Field(None, alias='oneMonthReturn')

@@ -10,12 +10,17 @@ from dotenv import load_dotenv
 from stonksapi.client import StonksApiClient
 from stonksapi.models import (
     TickerInfo, Quote, HistoricalData, NewsArticle, MarketMover,
-    FastInfo, EarningsData, FinancialStatement, DetailedQuote, SimpleQuote,
+    FastInfo, EarningsData, DetailedQuote, SimpleQuote,
     SimilarStock, HistoricalDataPoint, StockNews, SymbolSearchResult,
     SectorPerformance, MarketHours, HoldersData, EarningsTranscript,
     TechnicalIndicator, MarketIndex, StatementType, Frequency, HolderType,
-    MajorHolder, InstitutionalHolder, SustainabilityData, Action,
-    Dividend, Split, CapitalGain
+    MajorHoldersBreakdown, InstitutionalHolder, MutualFundHolder,
+    InsiderTransaction
+)
+from stonksapi.finance_query.models import (
+    FinancialStatement as FQFinancialStatement,
+    SectorPerformance as FQSectorPerformance,
+    MarketIndex as FQMarketIndex
 )
 
 # Load environment variables
@@ -108,7 +113,6 @@ def test_get_quote_polygon(client: StonksApiClient):
     assert quote.symbol == "GOOG"
     assert quote.source == "polygon"
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_quote_finance_query(client: StonksApiClient):
     """Test get_quote with finance_query source."""
     try:
@@ -121,7 +125,6 @@ def test_get_quote_finance_query(client: StonksApiClient):
 
 # ==================== Test get_historical_data ====================
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_historical_data(client: StonksApiClient):
     """Test get_historical_data from finance_query."""
     try:
@@ -136,7 +139,6 @@ def test_get_historical_data(client: StonksApiClient):
 
 # ==================== Test get_market_movers ====================
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_market_movers_actives(client: StonksApiClient):
     """Test get_market_movers with actives category."""
     try:
@@ -148,7 +150,6 @@ def test_get_market_movers_actives(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Market movers actives failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_market_movers_gainers(client: StonksApiClient):
     """Test get_market_movers with gainers category."""
     try:
@@ -160,7 +161,6 @@ def test_get_market_movers_gainers(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Market movers gainers failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_market_movers_losers(client: StonksApiClient):
     """Test get_market_movers with losers category."""
     try:
@@ -401,7 +401,6 @@ def test_get_yf_history_metadata(client: StonksApiClient):
 
 # ==================== Test Finance Query Provider Methods ====================
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_market_hours(client: StonksApiClient):
     """Test Finance Query market hours."""
     try:
@@ -411,7 +410,6 @@ def test_get_fq_market_hours(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query market hours failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_detailed_quotes(client: StonksApiClient):
     """Test Finance Query detailed quotes."""
     try:
@@ -422,7 +420,6 @@ def test_get_fq_detailed_quotes(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query detailed quotes failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_simple_quotes(client: StonksApiClient):
     """Test Finance Query simple quotes."""
     try:
@@ -433,7 +430,6 @@ def test_get_fq_simple_quotes(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query simple quotes failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_similar_stocks(client: StonksApiClient):
     """Test Finance Query similar stocks."""
     try:
@@ -444,7 +440,6 @@ def test_get_fq_similar_stocks(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query similar stocks failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_historical_data(client: StonksApiClient):
     """Test Finance Query historical data."""
     try:
@@ -456,7 +451,6 @@ def test_get_fq_historical_data(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query historical data failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_market_movers(client: StonksApiClient):
     """Test Finance Query market movers."""
     try:
@@ -467,7 +461,6 @@ def test_get_fq_market_movers(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query market movers failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_actives(client: StonksApiClient):
     """Test Finance Query actives."""
     try:
@@ -478,7 +471,6 @@ def test_get_fq_actives(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query actives failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_gainers(client: StonksApiClient):
     """Test Finance Query gainers."""
     try:
@@ -489,7 +481,6 @@ def test_get_fq_gainers(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query gainers failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_losers(client: StonksApiClient):
     """Test Finance Query losers."""
     try:
@@ -500,7 +491,6 @@ def test_get_fq_losers(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Finance Query losers failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_stock_news(client: StonksApiClient):
     """Test Finance Query stock news."""
     news = client.get_fq_stock_news("AAPL")
@@ -508,7 +498,6 @@ def test_get_fq_stock_news(client: StonksApiClient):
     if news:
         assert isinstance(news[0], StockNews)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_search_symbols(client: StonksApiClient):
     """Test Finance Query symbol search."""
     results = client.get_fq_search_symbols("Apple")
@@ -516,65 +505,55 @@ def test_get_fq_search_symbols(client: StonksApiClient):
     if results:
         assert isinstance(results[0], SymbolSearchResult)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_all_sector_performance(client: StonksApiClient):
     """Test Finance Query sector performance."""
     sectors = client.get_fq_all_sector_performance()
     assert isinstance(sectors, list)
     if sectors:
-        assert isinstance(sectors[0], SectorPerformance)
+        assert isinstance(sectors[0], FQSectorPerformance)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_sector_performance(client: StonksApiClient):
     """Test Finance Query sector performance by symbol."""
     sector = client.get_fq_sector_performance("AAPL")
-    assert isinstance(sector, SectorPerformance)
+    assert isinstance(sector, FQSectorPerformance)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_financials(client: StonksApiClient):
     """Test Finance Query financials."""
     financials = client.get_fq_financials("AAPL", StatementType.INCOME, Frequency.ANNUAL)
-    assert isinstance(financials, FinancialStatement)
+    assert isinstance(financials, FQFinancialStatement)
     assert financials.symbol == "AAPL"
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_income_statement(client: StonksApiClient):
     """Test Finance Query income statement."""
     income = client.get_fq_income_statement("AAPL", Frequency.ANNUAL)
-    assert isinstance(income, FinancialStatement)
+    assert isinstance(income, FQFinancialStatement)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_balance_sheet(client: StonksApiClient):
     """Test Finance Query balance sheet."""
     balance = client.get_fq_balance_sheet("AAPL", Frequency.ANNUAL)
-    assert isinstance(balance, FinancialStatement)
+    assert isinstance(balance, FQFinancialStatement)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_cash_flow_statement(client: StonksApiClient):
     """Test Finance Query cash flow statement."""
     cash_flow = client.get_fq_cash_flow_statement("AAPL", Frequency.ANNUAL)
-    assert isinstance(cash_flow, FinancialStatement)
+    assert isinstance(cash_flow, FQFinancialStatement)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_holders_data(client: StonksApiClient):
     """Test Finance Query holders data."""
     holders = client.get_fq_holders_data("AAPL", HolderType.INSTITUTIONAL)
     assert isinstance(holders, HoldersData)
     assert holders.symbol == "AAPL"
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_major_holders(client: StonksApiClient):
     """Test Finance Query major holders."""
     holders = client.get_fq_major_holders("AAPL")
     assert isinstance(holders, HoldersData)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_institutional_holders(client: StonksApiClient):
     """Test Finance Query institutional holders."""
     holders = client.get_fq_institutional_holders("AAPL")
     assert isinstance(holders, HoldersData)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_earnings_transcript(client: StonksApiClient):
     """Test Finance Query earnings transcript."""
     transcript = client.get_fq_earnings_transcript("AAPL")
@@ -587,21 +566,18 @@ def test_get_fq_technical_indicator(client: StonksApiClient):
     indicator = client.get_fq_technical_indicator("AAPL", "rsi", "3mo", "1d")
     assert isinstance(indicator, TechnicalIndicator)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_market_indices(client: StonksApiClient):
     """Test Finance Query market indices."""
     indices = client.get_fq_market_indices()
     assert isinstance(indices, list)
     if indices:
-        assert isinstance(indices[0], MarketIndex)
+        assert isinstance(indices[0], FQMarketIndex)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_health_check(client: StonksApiClient):
     """Test Finance Query health check."""
     health = client.get_fq_health_check()
     assert isinstance(health, dict)
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_get_fq_ping(client: StonksApiClient):
     """Test Finance Query ping."""
     ping = client.get_fq_ping()
@@ -677,7 +653,6 @@ def test_invalid_symbol_yfinance(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Invalid symbol test failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_invalid_symbol_finance_query(client: StonksApiClient):
     """Test Finance Query with invalid symbol."""
     # Should handle gracefully
@@ -688,7 +663,6 @@ def test_invalid_symbol_finance_query(client: StonksApiClient):
         # Some providers may raise exceptions for invalid symbols
         pytest.skip("Finance Query invalid symbol test failed")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_empty_symbols_list(client: StonksApiClient):
     """Test with empty symbols list."""
     try:
@@ -698,7 +672,6 @@ def test_empty_symbols_list(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Empty symbols list test failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_large_symbols_list(client: StonksApiClient):
     """Test with large symbols list."""
     try:
@@ -741,7 +714,6 @@ def test_data_consistency(client: StonksApiClient):
     except Exception as e:
         pytest.skip(f"Data consistency test failed: {e}")
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_rate_limiting_resilience(client: StonksApiClient):
     """Test resilience to rate limiting."""
     # Make multiple rapid requests
@@ -756,7 +728,6 @@ def test_rate_limiting_resilience(client: StonksApiClient):
             else:
                 raise e
 
-@pytest.mark.skipif(True, reason="Finance Query API appears to be down")
 def test_network_error_handling(client: StonksApiClient):
     """Test network error handling."""
     # This test verifies that network errors are handled gracefully

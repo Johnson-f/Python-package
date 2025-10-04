@@ -1,7 +1,7 @@
 [project]
 name = "stonksapi"
 version = "0.1.0"
-description = "Add your description here"
+description = "Unified stock fetching library for fetching stock related data"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
