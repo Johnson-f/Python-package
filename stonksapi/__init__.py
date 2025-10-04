@@ -21,8 +21,68 @@ from .models import (
     HistoricalData,
     NewsArticle,
 
-    # Other useful models
+    # YFinance Models - Core
+    FastInfo,
+    EarningsData,
+    EarningsCalendar,
+    EarningsEstimate,
+    RevenueEstimate,
+    Recommendation,
+    RecommendationSummary,
+    UpgradeDowngrade,
+    AnalystPriceTarget,
+    EPSTrend,
+    EPSRevisions,
+    GrowthEstimates,
+    MajorHolder,
+    SustainabilityData,
+    SECFiling,
+    FundData,
+    SharesOutstanding,
+    CapitalGain,
+    Action,
+
+    # Finance Query Models - Core
+    DetailedQuote,
+    SimpleQuote,
+    SimilarStock,
+    HistoricalDataPoint,
+    StockNews,
+    SymbolSearchResult,
+    
+    # Financial Statements
     FinancialStatement,
+    
+    # Holders Models (both providers have these)
+    InstitutionalHolder,
+    MutualFundHolder,
+    InsiderTransaction,
+    InsiderPurchase,
+    InsiderRosterHolder,
+    
+    # Finance Query Specific
+    MajorHoldersBreakdown,
+    InsiderRosterMember,
+    HoldersData,
+    EarningsTranscript,
+    TranscriptItem,
+    TranscriptMetadata,
+    TechnicalIndicator,
+    MarketIndex,
+    
+    # Technical Indicators
+    SMAData,
+    EMAData,
+    RSIData,
+    MACDData,
+    BBANDSData,
+    
+    # Enums
+    StatementType,
+    Frequency,
+    HolderType,
+
+    # Other Models  
     Dividend,
     Split,
     MarketHours,
@@ -32,13 +92,77 @@ from .models import (
 
 __all__ = [
     "StonksApiClient",
+    
+    # Unified Models
     "TickerInfo",
-    "Quote",
+    "Quote", 
     "HistoricalData",
     "NewsArticle",
+    
+    # YFinance Models - Core
+    "FastInfo",
+    "EarningsData",
+    "EarningsCalendar", 
+    "EarningsEstimate",
+    "RevenueEstimate",
+    "Recommendation",
+    "RecommendationSummary",
+    "UpgradeDowngrade",
+    "AnalystPriceTarget",
+    "EPSTrend",
+    "EPSRevisions",
+    "GrowthEstimates",
+    "MajorHolder",
+    "SustainabilityData",
+    "SECFiling",
+    "FundData",
+    "SharesOutstanding",
+    "CapitalGain",
+    "Action",
+    
+    # Finance Query Models - Core
+    "DetailedQuote",
+    "SimpleQuote",
+    "SimilarStock",
+    "HistoricalDataPoint",
+    "StockNews",
+    "SymbolSearchResult",
+    
+    # Financial Statements
     "FinancialStatement",
+    
+    # Holders Models
+    "InstitutionalHolder",
+    "MutualFundHolder",
+    "InsiderTransaction", 
+    "InsiderPurchase",
+    "InsiderRosterHolder",
+    "MajorHoldersBreakdown",
+    "InsiderRosterMember",
+    "HoldersData",
+    
+    # Earnings and Analysis
+    "EarningsTranscript",
+    "TranscriptItem",
+    "TranscriptMetadata",
+    "TechnicalIndicator",
+    "MarketIndex",
+    
+    # Technical Indicators
+    "SMAData",
+    "EMAData", 
+    "RSIData",
+    "MACDData",
+    "BBANDSData",
+    
+    # Enums
+    "StatementType",
+    "Frequency",
+    "HolderType",
+    
+    # Other Models
     "Dividend",
-    "Split",
+    "Split", 
     "MarketHours",
     "MarketMover",
     "SectorPerformance",

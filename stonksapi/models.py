@@ -6,9 +6,14 @@ This module provides strongly-typed models for all data providers.
 
 from datetime import date as DateType, datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator, ConfigDict, HttpUrl
+
+# Import all models from providers
+from .yfinance.models import *
+from .finance_query.models import *
 
 # ==================== Unified Models ====================
 

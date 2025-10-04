@@ -2,21 +2,19 @@
 
 A comprehensive, type-safe Python wrapper for the `yfinance` library with Pydantic models.
 
-**Part of the `stonksapi` package.**
 
 ## Features
 
-- ✅ **Strongly Typed**: Full Pydantic model support for `yfinance` responses.
-- ✅ **Easy to Use**: Clean, intuitive API with excellent IDE autocomplete.
-- ✅ **No API Key Required**: Access Yahoo Finance data freely.
-- ✅ **Well Documented**: Extensive docstrings and examples.
+- **Type-safe**: All data is returned as Pydantic models with proper type annotations
+- **Comprehensive**: Covers ALL yfinance functionality including advanced features
+- **Easy to use**: Simple, intuitive API
+- **Well-documented**: Full docstring coverage
+- **Complete Coverage**: Earnings, analyst data, ESG, news, SEC filings, and more
 
 ## Installation
 
-This package is part of the `stonksapi` project. The `yfinance` library is a dependency.
-
 ```bash
-uv add yfinance pydantic
+pip install yfinance pydantic
 ```
 
 ## Quick Start
@@ -24,41 +22,36 @@ uv add yfinance pydantic
 ```python
 from stonksapi.yfinance import YFinanceClient
 
-# Initialize client (no API key needed)
+# Create a client
 client = YFinanceClient()
 
-# Get company profile information for Apple Inc.
+# Get ticker information
 info = client.get_ticker_info("AAPL")
-
 print(f"Company: {info.long_name}")
-print(f"Sector: {info.sector}")
-print(f"Industry: {info.industry}")
 print(f"Market Cap: ${info.market_cap:,}")
-print(f"Website: {info.website}")
-```
+print(f"Sector: {info.sector}")
 
-## Type Safety
+# Get fast info (key metrics quickly)
+fast_info = client.get_fast_info("AAPL")
+print(f"Last Price: ${fast_info.last_price}")
+print(f"Market Cap: ${fast_info.market_cap:,}")
 
-All responses are fully typed with Pydantic models, giving you:
+# Get historical data
+history = client.get_history("AAPL", period="1mo")
+for day in history:
+    print(f"{day.date}: ${day.close:.2f}")
 
-- **IDE Autocomplete**: Your IDE knows all available fields.
-- **Type Checking**: Catch errors before runtime.
-- **Validation**: Automatic data validation from API responses.
-- **Documentation**: Inline documentation for all fields.
+# Get earnings data
+earnings = client.get_earnings("AAPL")
+for earning in earnings:
+    print(f"{earning.date}: Earnings ${earning.earnings}")
 
-```python
-# Your IDE will show you all available fields!
-info = client.get_ticker_info("MSFT")
+# Get analyst recommendations
+recommendations = client.get_recommendations("AAPL")
+for rec in recommendations:
+    print(f"Strong Buy: {rec.strong_buy}, Buy: {rec.buy}, Hold: {rec.hold}")
 
-market_cap = info.market_cap  # int type
-long_name = info.long_name    # str type
-website = info.website      # pydantic.HttpUrl type
-```
-
-## Contributing
-
-This package is part of the larger `stonksapi` project. See the main README for contribution guidelines.
-
-## License
-
-This package follows the license of the parent `stonksapi` project.
+# Get news
+news = client.get_news("AAPL")
+for article in news:
+    print(f"{article.title} - {article.publisher}")
