@@ -77,20 +77,13 @@ class AlphaVantageClient:
     ):
         """Initialize the Alpha Vantage client."""
         self.api_key = api_key or os.getenv("ALPHA_VANTAGE_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "API key must be provided either as argument or via "
-                "ALPHA_VANTAGE_API_KEY environment variable"
-            )
-
-        self.output_format = output_format
-
-        # Initialize Alpha Vantage library clients
-        self._ts = TimeSeries(key=self.api_key, output_format=output_format)
-        self._fd = FundamentalData(key=self.api_key, output_format=output_format)
-        self._fx = ForeignExchange(key=self.api_key, output_format=output_format)
-        self._crypto = CryptoCurrencies(key=self.api_key, output_format=output_format)
-        self._ti = TechIndicators(key=self.api_key, output_format=output_format)
+        if self.api_key:
+            # Initialize Alpha Vantage library clients
+            self._ts = TimeSeries(key=self.api_key, output_format=output_format)
+            self._fd = FundamentalData(key=self.api_key, output_format=output_format)
+            self._fx = ForeignExchange(key=self.api_key, output_format=output_format)
+            self._crypto = CryptoCurrencies(key=self.api_key, output_format=output_format)
+            self._ti = TechIndicators(key=self.api_key, output_format=output_format)
 
     def _reconstruct_time_series_dict(self, data_tuple):
         """Reconstructs the dictionary for time series models from the library's tuple response."""
