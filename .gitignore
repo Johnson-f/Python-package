@@ -5,3 +5,5 @@ __pycache__
 
 stonksapi.egg-info/
 __pycache__
+
+.coverage
